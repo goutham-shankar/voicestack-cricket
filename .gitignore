@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local uploads (dev only; use cloud storage in production)
+/public/uploads/**
+!/public/uploads/**/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
