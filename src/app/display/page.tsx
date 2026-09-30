@@ -10,7 +10,7 @@ import { Trophy, Circle, Gavel } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { IdleMatchBackground } from "@/components/auction/idle-match-background";
 import { cn } from "@/lib/utils";
-import type { AuctionResult, PlayerRef, RecentSale, TeamSummary } from "@/lib/auction-types";
+import type { AuctionResult, PlayerRef, RecentSale } from "@/lib/auction-types";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -186,7 +186,6 @@ export default function DisplayPage() {
           {!player ? (
             <IdleDashboard
               key="idle"
-              teams={state.teams}
               upNext={state.pendingPlayers}
             />
           ) : (
@@ -437,13 +436,10 @@ function Atmosphere({ isLive }: { isLive: boolean }) {
 }
 
 function IdleDashboard({
-  teams,
   upNext,
 }: {
-  teams: TeamSummary[];
   upNext: PlayerRef[];
 }) {
-  const rankedTeams = [...teams].sort((a, b) => b.remaining - a.remaining);
   const next = upNext.slice(0, 4);
 
   return (
@@ -512,46 +508,6 @@ function IdleDashboard({
                 </div>
               </div>
             ))}
-          </div>
-        </motion.div>
-      )}
-
-      {rankedTeams.length > 0 && (
-        <motion.div
-          variants={fadeUp}
-          className="w-full rounded-2xl border border-white/10 bg-black/55 p-4 backdrop-blur-md"
-        >
-          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-            Team purse
-          </p>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
-            {rankedTeams.map((t) => {
-              const pct = t.initialBudget > 0 ? Math.max(0, (t.remaining / t.initialBudget) * 100) : 0;
-              return (
-                <div key={t._id} className="flex items-center gap-3">
-                  <Avatar className="size-8 rounded-full">
-                    {t.logoUrl && <AvatarImage src={t.logoUrl} alt="" className="object-cover" />}
-                    <AvatarFallback className="bg-secondary text-[10px]">
-                      {t.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="truncate text-sm font-semibold">{t.name}</p>
-                      <p className="tabular-money shrink-0 text-sm font-bold text-primary">
-                        ₹{t.remaining.toLocaleString("en-IN")}
-                      </p>
-                    </div>
-                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      {t.squadCount}/{t.maxSquadSize} players
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </motion.div>
       )}

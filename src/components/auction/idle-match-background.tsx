@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 const FADE_S = 0.8;
+
+// Drop a web-optimised clip here to use footage instead of the painted backdrop.
+const CLIP = "/video/idle-match.mp4";
 
 // Inline SVG noise, used as film grain.
 const GRAIN =
@@ -12,6 +15,22 @@ const GRAIN =
 export function IdleMatchBackground() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [visible, setVisible] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  // Honour reduced-motion: the CSS kills the pan, this stops the footage too.
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (mq.matches) v.pause();
+      else void v.play().catch(() => {});
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [ready]);
 
   // Fade to black just before the loop point and back in after it, hiding the hard cut.
   function handleTimeUpdate() {
@@ -23,26 +42,56 @@ export function IdleMatchBackground() {
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-black">
-      {/* Footage, colour-graded and slowly pushed in */}
-      <video
-        ref={videoRef}
-        src="/video/idle-match.mp4"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="auto"
-        onCanPlay={() => setVisible(true)}
-        onTimeUpdate={handleTimeUpdate}
+      {/* Painted stadium backdrop: covers load, and stands in when there is no clip */}
+      <div
         className={cn(
-          "idle-kenburns absolute inset-0 size-full object-cover transition-opacity duration-700",
-          visible ? "opacity-100" : "opacity-0"
+          "absolute inset-0 transition-opacity duration-700",
+          failed || !ready ? "opacity-100" : "opacity-0"
         )}
-        style={{
-          filter: "saturate(0.8) contrast(1.08) brightness(0.9) blur(1px)",
-          animation: "idle-kenburns 40s ease-in-out infinite alternate",
-        }}
-      />
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 80% 55% at 50% 118%, oklch(0.42 0.11 150) 0%, transparent 60%)," +
+              "radial-gradient(ellipse 60% 40% at 12% -8%, oklch(0.55 0.12 250 / 0.5) 0%, transparent 65%)," +
+              "radial-gradient(ellipse 60% 40% at 88% -8%, oklch(0.55 0.12 250 / 0.5) 0%, transparent 65%)," +
+              "linear-gradient(180deg, oklch(0.16 0.03 265) 0%, oklch(0.11 0.02 265) 55%, oklch(0.08 0.02 150) 100%)",
+          }}
+        />
+        {/* Floodlight bloom */}
+        <div
+          className="idle-sweep absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/[0.05] to-transparent"
+          style={{ animation: "idle-sweep 18s ease-in-out infinite" }}
+        />
+      </div>
+
+      {/* Footage, colour-graded and slowly pushed in */}
+      {!failed && (
+        <video
+          ref={videoRef}
+          src={CLIP}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          onCanPlay={() => {
+            setReady(true);
+            setVisible(true);
+          }}
+          onError={() => setFailed(true)}
+          onTimeUpdate={handleTimeUpdate}
+          className={cn(
+            "idle-kenburns absolute inset-0 size-full object-cover transition-opacity duration-700",
+            visible ? "opacity-100" : "opacity-0"
+          )}
+          style={{
+            filter: "saturate(0.8) contrast(1.08) brightness(0.9) blur(1px)",
+            animation: "idle-kenburns 40s ease-in-out infinite alternate",
+          }}
+        />
+      )}
 
       {/* Cool brand tint to unify the footage with the UI */}
       <div className="absolute inset-0 bg-primary/10 mix-blend-color" />
