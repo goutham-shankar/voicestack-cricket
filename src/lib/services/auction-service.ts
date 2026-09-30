@@ -561,3 +561,14 @@ export async function markUnsold() {
     result: { status: "UNSOLD" as const, playerName: player.name },
   };
 }
+
+/** Turns the display board's final-squads showcase on or off. */
+export async function setShowcase(enabled: boolean) {
+  await connectDB();
+  await AuctionStateModel.findOneAndUpdate(
+    { singleton: "global" },
+    { $set: { showcase: enabled } },
+    { upsert: true }
+  );
+  return buildFullState();
+}

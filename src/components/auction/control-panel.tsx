@@ -5,7 +5,16 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -13,15 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,11 +35,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Play,
-  Pause,
-  RotateCcw,
   Gavel,
+  Trophy,
   Ban,
-  Timer,
   Loader2,
 } from "lucide-react";
 import type { FullAuctionState } from "@/lib/auction-types";
@@ -70,16 +68,26 @@ export function ControlPanel({
 }) {
   const { auctionState, pendingPlayers } = state;
   const isLive = auctionState.status === "LIVE";
+  const showcaseOn = auctionState.showcase === true;
   const player = auctionState.currentPlayerId;
   const basePrice = player
     ? (player.basePriceOverride ?? player.categoryId?.defaultBasePrice ?? 0)
     : 0;
 
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
   const [sellTeamId, setSellTeamId] = useState<string>("");
-  const [sellPrice, setSellPrice] = useState<string>("");
-  const [sellDialogOpen, setSellDialogOpen] = useState(false);
+  // Seeded here too: the lot-change reset below cannot fire on first mount.
+  const [sellPrice, setSellPrice] = useState<string>(basePrice ? String(basePrice) : "");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  // Reset the sale form when a new lot goes live. Adjusting state during
+  // render (rather than in an effect) avoids a wasted commit with stale values.
+  const livePlayerId = player?._id ?? null;
+  const [formLotId, setFormLotId] = useState(livePlayerId);
+  if (formLotId !== livePlayerId) {
+    setFormLotId(livePlayerId);
+    setSellTeamId("");
+    setSellPrice(basePrice ? String(basePrice) : "");
+  }
 
   async function run(action: string, fn: () => Promise<unknown>) {
     setLoadingAction(action);
@@ -100,195 +108,204 @@ export function ControlPanel({
     <div className="space-y-5">
       {canControl && !isLive && (
         <div className="space-y-2">
-          <Label>Start Next Player</Label>
-          <div className="flex gap-2">
-            <Select
-              value={selectedPlayerId}
-              onValueChange={(v) => setSelectedPlayerId(v ?? "")}
-            >
-              <SelectTrigger className="flex-1">
-                <SelectValue>
-                  {(v: string) =>
-                    pendingPlayers.find((p) => p._id === v)?.name ??
-                    "Select a player"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {pendingPlayers.length === 0 && (
-                  <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                    No pending players
-                  </div>
-                )}
-                {pendingPlayers.map((p) => (
-                  <SelectItem key={p._id} value={p._id}>
-                    {p.name} — {p.status === "UNSOLD" ? "re-auction" : p.categoryId?.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              disabled={!selectedPlayerId || loadingAction === "start"}
-              onClick={() =>
-                run("start", async () => {
-                  await postJSON("/api/auction/start", { playerId: selectedPlayerId });
-                  setSelectedPlayerId("");
-                })
-              }
-            >
-              {loadingAction === "start" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              Start
-            </Button>
+          <div className="flex items-baseline justify-between gap-3">
+            <Label>Auction Order</Label>
+            <span className="text-xs text-muted-foreground">
+              {pendingPlayers.length} pending
+            </span>
           </div>
-        </div>
-      )}
 
-      {canControl && isLive && (
-        <div className="flex flex-wrap items-center gap-2">
-          {auctionState.timerPaused ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loadingAction === "resume"}
-              onClick={() => run("resume", () => postJSON("/api/auction/resume"))}
-            >
-              <Play className="size-4" />
-              Resume
-            </Button>
+          {pendingPlayers.length === 0 ? (
+            <p className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+              No pending players. Every lot has been auctioned.
+            </p>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!auctionState.timerEnabled || loadingAction === "pause"}
-              onClick={() => run("pause", () => postJSON("/api/auction/pause"))}
-            >
-              <Pause className="size-4" />
-              Pause
-            </Button>
+            <div className="max-h-96 overflow-y-auto rounded-md border">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead className="w-12 text-center">#</TableHead>
+                    <TableHead>Player</TableHead>
+                    <TableHead className="hidden sm:table-cell">Category</TableHead>
+                    <TableHead className="text-right">Base Price</TableHead>
+                    <TableHead className="w-28 text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingPlayers.map((p, i) => {
+                    const base =
+                      p.basePriceOverride ?? p.categoryId?.defaultBasePrice ?? 0;
+                    const starting = loadingAction === `start-${p._id}`;
+                    return (
+                      <TableRow
+                        key={p._id}
+                        className={i === 0 ? "bg-primary/5" : undefined}
+                      >
+                        <TableCell className="text-center text-sm font-semibold tabular-nums text-muted-foreground">
+                          {i + 1}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2.5">
+                            <Avatar className="size-8">
+                              {p.avatarUrl && (
+                                <AvatarImage src={p.avatarUrl} alt="" className="object-cover" />
+                              )}
+                              <AvatarFallback className="text-[10px]">
+                                {p.name.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{p.name}</p>
+                              <div className="flex items-center gap-1.5">
+                                {p.role && (
+                                  <span className="text-xs text-muted-foreground">{p.role}</span>
+                                )}
+                                {p.status === "UNSOLD" && (
+                                  <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                                    Re-auction
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                          {p.categoryId?.name ?? "—"}
+                        </TableCell>
+                        <TableCell className="tabular-money text-right text-sm font-medium">
+                          ₹{base.toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant={i === 0 ? "default" : "outline"}
+                            disabled={loadingAction !== null}
+                            onClick={() =>
+                              run(`start-${p._id}`, () =>
+                                postJSON("/api/auction/start", { playerId: p._id })
+                              )
+                            }
+                          >
+                            {starting ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Play className="size-4" />
+                            )}
+                            Start
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loadingAction === "reset"}
-            onClick={() => run("reset", () => postJSON("/api/auction/reset"))}
-          >
-            <RotateCcw className="size-4" />
-            Reset Timer
-          </Button>
-
-          <div className="ml-auto flex items-center gap-2 rounded-lg border border-border px-3 py-1.5">
-            <Timer className="size-3.5 text-muted-foreground" />
-            <Label htmlFor="timer-toggle" className="text-xs text-muted-foreground">
-              Timer
-            </Label>
-            <Switch
-              id="timer-toggle"
-              checked={auctionState.timerEnabled}
-              onCheckedChange={(checked) =>
-                run("timer", () => postJSON("/api/auction/timer", { enabled: checked }))
-              }
-            />
-          </div>
         </div>
       )}
 
-      {canSell && !isLive && (
+      {canControl && !isLive && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+          <Trophy className="size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Final Squads Showcase</p>
+            <p className="text-xs text-muted-foreground">
+              Cycles every team and its full squad on the display board.
+            </p>
+          </div>
+          <Button
+            variant={showcaseOn ? "default" : "outline"}
+            size="sm"
+            disabled={loadingAction === "showcase"}
+            onClick={() =>
+              run("showcase", () =>
+                postJSON("/api/auction/showcase", { enabled: !showcaseOn })
+              )
+            }
+          >
+            {loadingAction === "showcase" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Trophy className="size-4" />
+            )}
+            {showcaseOn ? "Stop Showcase" : "Show Final Squads"}
+          </Button>
+        </div>
+      )}
+
+      {canSell && !isLive && !showcaseOn && (
         <p className="text-sm text-muted-foreground">
           Waiting for the next player to be started.
         </p>
       )}
 
       {canSell && isLive && (
-        <div
-          className={canControl ? "flex gap-2 border-t border-border pt-4" : "flex gap-2"}
-        >
-          <Dialog
-            open={sellDialogOpen}
-            onOpenChange={(next) => {
-              setSellDialogOpen(next);
-              if (next) {
-                setSellTeamId("");
-                setSellPrice(basePrice ? String(basePrice) : "");
+        <div className={canControl ? "space-y-3 border-t border-border pt-4" : "space-y-3"}>
+          <p className="text-sm text-muted-foreground">
+            Bidding for {player?.name} happens verbally in the room — enter who won
+            and the final hammer price.
+          </p>
+
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,13rem)]">
+            <div className="space-y-1.5">
+              <Label>Winning Team</Label>
+              <Select value={sellTeamId} onValueChange={(v) => setSellTeamId(v ?? "")}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(v: string) =>
+                      state.teams.find((t) => t._id === v)?.name ?? "Select a team"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {state.teams.map((t) => (
+                    <SelectItem key={t._id} value={t._id}>
+                      {t.name} · ₹{t.remaining.toLocaleString("en-IN")} left
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="sell-price">Sold Price (₹)</Label>
+              <Input
+                id="sell-price"
+                type="number"
+                min={1}
+                value={sellPrice}
+                onChange={(e) => setSellPrice(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {sellTeam && priceValid && priceValue > sellTeam.remaining && (
+            <p className="text-xs text-destructive">
+              Exceeds {sellTeam.name}&apos;s remaining wallet of ₹
+              {sellTeam.remaining.toLocaleString("en-IN")}.
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              className="flex-1 bg-sold text-sold-foreground hover:bg-sold/90"
+              disabled={!sellTeamId || !priceValid || loadingAction === "sell"}
+              onClick={() =>
+                run("sell", () =>
+                  postJSON("/api/auction/sell", {
+                    teamId: sellTeamId,
+                    price: Math.round(priceValue),
+                  })
+                )
               }
-            }}
-          >
-            <DialogTrigger
-              render={
-                <Button className="flex-1 bg-sold text-sold-foreground hover:bg-sold/90">
-                  <Gavel className="size-4" />
-                  Record Sale
-                </Button>
-              }
-            />
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Record offline sale</DialogTitle>
-                <DialogDescription>
-                  Bidding for {player?.name} happens verbally in the room — enter who
-                  won and the final hammer price.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Winning Team</Label>
-                  <Select value={sellTeamId} onValueChange={(v) => setSellTeamId(v ?? "")}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue>
-                        {(v: string) =>
-                          state.teams.find((t) => t._id === v)?.name ?? "Select a team"
-                        }
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {state.teams.map((t) => (
-                        <SelectItem key={t._id} value={t._id}>
-                          {t.name} · ₹{t.remaining.toLocaleString("en-IN")} left
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sell-price">Sold Price (₹)</Label>
-                  <Input
-                    id="sell-price"
-                    type="number"
-                    min={1}
-                    value={sellPrice}
-                    onChange={(e) => setSellPrice(e.target.value)}
-                  />
-                  {sellTeam && priceValid && priceValue > sellTeam.remaining && (
-                    <p className="text-xs text-destructive">
-                      Exceeds {sellTeam.name}&apos;s remaining wallet of ₹
-                      {sellTeam.remaining.toLocaleString("en-IN")}.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  disabled={!sellTeamId || !priceValid || loadingAction === "sell"}
-                  onClick={() =>
-                    run("sell", async () => {
-                      await postJSON("/api/auction/sell", {
-                        teamId: sellTeamId,
-                        price: Math.round(priceValue),
-                      });
-                      setSellDialogOpen(false);
-                    })
-                  }
-                >
-                  {loadingAction === "sell" && <Loader2 className="size-4 animate-spin" />}
-                  Confirm Sale
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            >
+              {loadingAction === "sell" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Gavel className="size-4" />
+              )}
+              Confirm Sale
+            </Button>
 
           <AlertDialog>
             <AlertDialogTrigger
@@ -323,6 +340,7 @@ export function ControlPanel({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          </div>
         </div>
       )}
     </div>

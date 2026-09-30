@@ -206,3 +206,59 @@
 @media (prefers-reduced-motion: reduce) {
   .marquee-track { animation: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   Broadcast display theme
+   Scoped to the TV/projector board so the admin UI keeps its amber primary.
+   Purple carries the brand; gold is reserved for money and auction states.
+--------------------------------------------------------------------------- */
+.broadcast {
+  --primary: oklch(0.62 0.21 295);
+  --primary-foreground: oklch(0.98 0.005 295);
+  --accent: oklch(0.3 0.08 295);
+  --accent-foreground: oklch(0.92 0.03 295);
+  --gold: oklch(0.82 0.15 85);
+  --gold-foreground: oklch(0.16 0.02 85);
+  --background: oklch(0.09 0.008 280);
+  --foreground: oklch(0.98 0.003 280);
+  --muted-foreground: oklch(0.72 0.012 280);
+  --border: oklch(1 0 0 / 12%);
+}
+
+/* Money never reflows as digits change */
+.tabular-money {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+@keyframes bid-pop {
+  0% { transform: scale(1); }
+  38% { transform: scale(1.085); }
+  100% { transform: scale(1); }
+}
+.animate-bid-pop { animation: bid-pop 0.62s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes state-urgent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-state-urgent { animation: state-urgent 1s ease-in-out infinite; }
+
+@keyframes countdown-ring {
+  from { stroke-dashoffset: 0; }
+}
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ticker-track {
+  animation: ticker-scroll linear infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bid-pop,
+  .animate-state-urgent,
+  .ticker-track { animation: none !important; }
+}

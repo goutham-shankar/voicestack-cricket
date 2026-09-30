@@ -11,6 +11,8 @@ const auctionStateSchema = new Schema(
     timerEndsAt: { type: Date, default: null },
     timerRemainingMs: { type: Number, default: null },
     timerPaused: { type: Boolean, default: false },
+    /** Final-squads showcase on the display board, driven by the admin. */
+    showcase: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

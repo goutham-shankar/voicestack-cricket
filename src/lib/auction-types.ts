@@ -48,6 +48,26 @@ export type AuctionStateDTO = {
   timerEndsAt: string | null;
   timerRemainingMs: number | null;
   timerPaused: boolean;
+  showcase?: boolean;
+};
+
+export type SquadPlayer = {
+  _id: string;
+  name: string;
+  avatarUrl: string | null;
+  role: string;
+  category: string | null;
+  price: number;
+};
+
+export type TeamSquad = {
+  _id: string;
+  name: string;
+  logoUrl: string | null;
+  spent: number;
+  remaining: number;
+  maxSquadSize: number;
+  players: SquadPlayer[];
 };
 
 export type AuctionStats = {

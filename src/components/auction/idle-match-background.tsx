@@ -87,42 +87,19 @@ export function IdleMatchBackground() {
             visible ? "opacity-100" : "opacity-0"
           )}
           style={{
-            filter: "saturate(0.8) contrast(1.08) brightness(0.9) blur(1px)",
+            filter: "saturate(0.92) contrast(1.05)",
             animation: "idle-kenburns 40s ease-in-out infinite alternate",
           }}
         />
       )}
 
-      {/* Cool brand tint to unify the footage with the UI */}
+      {/* Cool brand tint. mix-blend-color shifts hue only — no light lost. */}
       <div className="absolute inset-0 bg-primary/10 mix-blend-color" />
-      <div className="absolute inset-0 bg-black/20" />
-
-      {/* Spotlight: keep the centre readable, deepen the edges */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 70% 60% at 50% 45%, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.55) 100%)",
-        }}
-      />
-
-      {/* Header and ticker legibility */}
-      <div className="absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black/60 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/75 via-black/40 to-transparent" />
 
       {/* Slow light sweep */}
       <div
         className="idle-sweep absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/[0.045] to-transparent"
         style={{ animation: "idle-sweep 14s ease-in-out infinite" }}
-      />
-
-      {/* Scanlines */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0px, rgba(0,0,0,0.16) 1px, transparent 1px, transparent 4px)",
-        }}
       />
 
       {/* Film grain */}
