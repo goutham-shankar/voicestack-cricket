@@ -45,4 +45,4 @@ yarn-error.log*
 next-env.d.ts
 
 # idle background footage (large, third-party)
-/public/video/
+
