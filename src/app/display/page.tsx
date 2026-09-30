@@ -6,10 +6,11 @@ import { useAuctionState } from "@/lib/use-auction-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AuctionTimer } from "@/components/auction/auction-timer";
 import { AnimatedBidAmount, MoneyFigure } from "@/components/auction/animated-bid-amount";
-import { Trophy, Circle, Wallet, TrendingUp, Gavel } from "lucide-react";
+import { Trophy, Circle, Gavel } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { IdleMatchBackground } from "@/components/auction/idle-match-background";
 import { cn } from "@/lib/utils";
-import type { AuctionResult, AuctionStats, RecentSale } from "@/lib/auction-types";
+import type { AuctionResult, PlayerRef, RecentSale, TeamSummary } from "@/lib/auction-types";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -115,9 +116,14 @@ export default function DisplayPage() {
     : 0;
 
   return (
-    <div className="relative flex min-h-svh flex-col overflow-hidden bg-background text-foreground">
+    <div
+      className={cn(
+        "relative flex min-h-svh flex-col overflow-hidden bg-background text-foreground",
+        !player && "dark"
+      )}
+    >
       <audio ref={audioRef} src="/audio/ipl-theme.mp3" playsInline />
-      <Atmosphere isLive={!!isLive} />
+      {player ? <Atmosphere isLive={!!isLive} /> : <IdleMatchBackground />}
 
       {/* Top bar */}
       <motion.header
@@ -180,8 +186,8 @@ export default function DisplayPage() {
           {!player ? (
             <IdleDashboard
               key="idle"
-              stats={state.stats}
-              recentSales={state.recentSales}
+              teams={state.teams}
+              upNext={state.pendingPlayers}
             />
           ) : (
             <motion.div
@@ -430,54 +436,23 @@ function Atmosphere({ isLive }: { isLive: boolean }) {
   );
 }
 
-function StatTile({
-  label,
-  value,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  icon: typeof Trophy;
-  accent: "sold" | "primary" | "gold" | "live";
-}) {
-  const accentClass = {
-    sold: "text-sold",
-    primary: "text-primary",
-    gold: "text-primary",
-    live: "text-live",
-  }[accent];
-
-  return (
-    <motion.div
-      variants={fadeUp}
-      className="flex flex-col items-center gap-1 rounded-2xl border border-border/70 bg-card/40 px-4 py-4 text-center backdrop-blur-sm"
-    >
-      <Icon className={cn("size-5", accentClass)} />
-      <p className={cn("tabular-money text-xl font-black sm:text-2xl", accentClass)}>
-        {value}
-      </p>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-    </motion.div>
-  );
-}
-
 function IdleDashboard({
-  stats,
-  recentSales,
+  teams,
+  upNext,
 }: {
-  stats: AuctionStats;
-  recentSales: RecentSale[];
+  teams: TeamSummary[];
+  upNext: PlayerRef[];
 }) {
+  const rankedTeams = [...teams].sort((a, b) => b.remaining - a.remaining);
+  const next = upNext.slice(0, 4);
+
   return (
     <motion.div
       variants={stagger}
       initial="hidden"
       animate="show"
       exit={{ opacity: 0, scale: 1.04, filter: "blur(8px)" }}
-      className="flex w-full max-w-5xl flex-col items-center gap-8"
+      className="flex w-full max-w-6xl flex-col items-center gap-8"
     >
       <motion.div variants={fadeUp} className="flex flex-col items-center gap-6 text-center">
         <div className="relative">
@@ -508,30 +483,77 @@ function IdleDashboard({
         </div>
       </motion.div>
 
-      <motion.div
-        variants={stagger}
-        className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4"
-      >
-        <StatTile label="Sold" value={stats.sold} icon={Trophy} accent="sold" />
-        <StatTile label="Remaining" value={stats.remaining} icon={Gavel} accent="primary" />
-        <StatTile
-          label="Total Spent"
-          value={`₹${stats.totalSpent.toLocaleString("en-IN")}`}
-          icon={Wallet}
-          accent="primary"
-        />
-        <StatTile
-          label="Highest Sale"
-          value={`₹${stats.highestSale.toLocaleString("en-IN")}`}
-          icon={TrendingUp}
-          accent="gold"
-        />
-      </motion.div>
+      {next.length > 0 && (
+        <motion.div variants={fadeUp} className="flex flex-col items-center gap-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
+            Up next
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {next.map((p, i) => (
+              <div
+                key={p._id}
+                className={cn(
+                  "flex items-center gap-3 rounded-full border bg-black/55 py-1.5 pl-1.5 pr-5 backdrop-blur-md",
+                  i === 0 ? "border-primary/60" : "border-white/10"
+                )}
+              >
+                <Avatar className="size-9 rounded-full">
+                  {p.avatarUrl && <AvatarImage src={p.avatarUrl} alt="" className="object-cover" />}
+                  <AvatarFallback className="bg-secondary text-[10px]">
+                    {p.name.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="leading-tight">
+                  <p className="text-sm font-semibold">{p.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {p.role}
+                    {p.categoryId?.name ? ` · ${p.categoryId.name}` : ""}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
-      {recentSales.length > 0 && (
-        <motion.p variants={fadeUp} className="text-xs text-muted-foreground">
-          Scroll the ticker below for the latest sales
-        </motion.p>
+      {rankedTeams.length > 0 && (
+        <motion.div
+          variants={fadeUp}
+          className="w-full rounded-2xl border border-white/10 bg-black/55 p-4 backdrop-blur-md"
+        >
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
+            Team purse
+          </p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+            {rankedTeams.map((t) => {
+              const pct = t.initialBudget > 0 ? Math.max(0, (t.remaining / t.initialBudget) * 100) : 0;
+              return (
+                <div key={t._id} className="flex items-center gap-3">
+                  <Avatar className="size-8 rounded-full">
+                    {t.logoUrl && <AvatarImage src={t.logoUrl} alt="" className="object-cover" />}
+                    <AvatarFallback className="bg-secondary text-[10px]">
+                      {t.name.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-sm font-semibold">{t.name}</p>
+                      <p className="tabular-money shrink-0 text-sm font-bold text-primary">
+                        ₹{t.remaining.toLocaleString("en-IN")}
+                      </p>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                    </div>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {t.squadCount}/{t.maxSquadSize} players
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
       )}
     </motion.div>
   );
@@ -874,64 +896,122 @@ function ResultFlash({ flash }: { flash: AuctionResult }) {
 }
 
 function RecentSalesTicker({ sales }: { sales: RecentSale[] }) {
-  const CARD_W = 236; // card width (220) + gap (16)
-  const loop = useMemo(() => [...sales, ...sales], [sales]);
+  // Repeat the list until one group is wider than a large screen, then render it twice
+  // so the -50% translate loops seamlessly.
+  const group = useMemo(() => {
+    if (sales.length === 0) return [];
+    const reps = Math.max(1, Math.ceil(8 / sales.length));
+    return Array.from({ length: reps }, () => sales).flat();
+  }, [sales]);
+  const topPrice = useMemo(() => Math.max(0, ...sales.map((s) => s.price)), [sales]);
+  const duration = Math.max(group.length * 5, 30);
 
   return (
     <motion.footer
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.15 }}
-      className="relative z-10 bg-transparent px-4 py-3 md:px-8"
+      className="relative z-10 flex h-24 items-stretch border-t border-white/10 bg-black/75 backdrop-blur-xl"
     >
-      <div className="mx-auto flex max-w-6xl flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Recently Sold
-        </p>
-
-        {sales.length === 0 ? (
-          <div className="flex h-20 items-center justify-center rounded-2xl border border-dashed border-border/70 text-sm text-muted-foreground">
-            No players sold yet — the board updates as results come in.
-          </div>
-        ) : (
-          <div className="relative h-20 overflow-hidden">
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-background to-transparent" />
-            <motion.div
-              className="absolute inset-y-0 left-0 flex items-center gap-4"
-              animate={{ x: [0, -CARD_W * sales.length] }}
-              transition={{
-                duration: Math.max(sales.length * 3.5, 10),
-                repeat: Infinity,
-                ease: "linear",
-              }}
-            >
-              {loop.map((sale, i) => (
-                <div
-                  key={`${sale._id}-${i}`}
-                  className="flex w-56 shrink-0 items-center gap-3 rounded-xl border border-border/70 bg-card/50 px-3 py-2 backdrop-blur-sm"
-                >
-                  <Avatar className="size-9 rounded-lg">
-                    {sale.avatarUrl && <AvatarImage src={sale.avatarUrl} alt="" />}
-                    <AvatarFallback className="rounded-lg bg-secondary text-[10px]">
-                      {sale.playerName.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{sale.playerName}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {sale.teamName}
-                    </p>
-                  </div>
-                  <span className="tabular-money shrink-0 text-sm font-bold text-sold">
-                    ₹{sale.price.toLocaleString("en-IN")}
-                  </span>
-                </div>
-              ))}
-            </motion.div>
-          </div>
-        )}
+      {/* Fixed label */}
+      <div className="relative z-10 flex shrink-0 items-center gap-3 border-r border-white/10 bg-black/40 px-6 md:px-10">
+        <span className="relative flex size-2.5">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-sold opacity-60" />
+          <span className="relative inline-flex size-2.5 rounded-full bg-sold" />
+        </span>
+        <div className="leading-tight">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-foreground">
+            Latest Sales
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {sales.length} {sales.length === 1 ? "player" : "players"} sold
+          </p>
+        </div>
       </div>
+
+      {sales.length === 0 ? (
+        <div className="flex flex-1 items-center px-8 text-sm text-muted-foreground">
+          No players sold yet — the board updates as results come in.
+        </div>
+      ) : (
+        <div
+          className="group relative min-w-0 flex-1 overflow-hidden"
+          style={{
+            maskImage: "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
+            WebkitMaskImage:
+              "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
+          }}
+        >
+          <div
+            className="marquee-track flex h-full w-max items-stretch"
+            style={{ animationDuration: `${duration}s` }}
+          >
+            {[0, 1].map((copy) => (
+              <div key={copy} aria-hidden={copy === 1} className="flex shrink-0 items-stretch">
+                {group.map((sale, i) => {
+                  const isTop = sale.price === topPrice && topPrice > 0;
+                  return (
+                    <div
+                      key={`${copy}-${sale._id}-${i}`}
+                      className="flex shrink-0 items-center gap-4 border-r border-white/10 px-7"
+                    >
+                      <Avatar
+                        className={cn(
+                          "size-12 rounded-full ring-2",
+                          isTop ? "ring-primary/70" : "ring-white/15"
+                        )}
+                      >
+                        {sale.avatarUrl && (
+                          <AvatarImage src={sale.avatarUrl} alt="" className="object-cover" />
+                        )}
+                        <AvatarFallback className="bg-secondary text-sm font-semibold">
+                          {sale.playerName.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="min-w-[9rem]">
+                        <p className="max-w-[12rem] truncate text-base font-semibold leading-tight">
+                          {sale.playerName}
+                        </p>
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Avatar className="size-4 rounded-full">
+                            {sale.teamLogoUrl && (
+                              <AvatarImage src={sale.teamLogoUrl} alt="" className="object-cover" />
+                            )}
+                            <AvatarFallback className="bg-secondary text-[7px]">
+                              {sale.teamName.slice(0, 1)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="max-w-[10rem] truncate">{sale.teamName}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <p
+                          className={cn(
+                            "tabular-money text-xl font-bold leading-tight",
+                            isTop ? "text-primary" : "text-foreground"
+                          )}
+                        >
+                          ₹{sale.price.toLocaleString("en-IN")}
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-0.5 text-[10px] font-semibold uppercase tracking-[0.2em]",
+                            isTop ? "text-primary/80" : "text-sold"
+                          )}
+                        >
+                          {isTop ? "Highest sale" : "Sold"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </motion.footer>
   );
 }
