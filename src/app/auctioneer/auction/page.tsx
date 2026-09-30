@@ -14,8 +14,8 @@ export default async function AuctioneerAuctionPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           {team
-            ? `Bid for ${team.name}. Watch your wallet and squad update as players are sold.`
-            : "Your account is not linked to a team — ask an admin to assign one before bidding."}
+            ? `Live view for ${team.name}. Watch the current player, wallet and squad update as players are sold.`
+            : "Your account is not linked to a team — ask an admin to assign one."}
         </p>
       </div>
       <AuctionRoom

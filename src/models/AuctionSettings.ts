@@ -6,7 +6,6 @@ const auctionSettingsSchema = new Schema(
     defaultWalletBudget: { type: Number, required: true, default: 100000 },
     defaultMaxSquadSize: { type: Number, required: true, default: 12 },
     timerSeconds: { type: Number, required: true, default: 30 },
-    bidIncrement: { type: Number, required: true, default: 500 },
     minReservePerSlot: { type: Number, required: true, default: 1000 },
   },
   { timestamps: true }

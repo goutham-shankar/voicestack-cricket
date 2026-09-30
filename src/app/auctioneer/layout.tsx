@@ -19,7 +19,7 @@ export default async function AuctioneerLayout({
           <div className="leading-tight">
             <p className="text-sm font-semibold">Voicestack Cricket League</p>
             <p className="text-xs text-muted-foreground">
-              {team ? team.name : "Auctioneer"} · Bidding desk
+              {team ? team.name : "Auctioneer"} · Live view
             </p>
           </div>
         </div>

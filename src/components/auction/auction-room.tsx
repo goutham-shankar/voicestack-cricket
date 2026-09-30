@@ -10,8 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Circle, WifiOff, Tv, AlertTriangle } from "lucide-react";
 import { useAuctionState } from "@/lib/use-auction-state";
 import { PlayerSpotlight } from "@/components/auction/player-spotlight";
-import { BidPanel } from "@/components/auction/bid-panel";
-import { BidHistoryList } from "@/components/auction/bid-history-list";
+import { RecentSalesList } from "@/components/auction/recent-sales-list";
 import { AuctionTimer } from "@/components/auction/auction-timer";
 import { TeamWalletStrip } from "@/components/auction/team-wallet-strip";
 import { MySquadList, MyTeamPanel } from "@/components/auction/my-team-panel";
@@ -23,7 +22,6 @@ function scopeStateToTeam(
   state: FullAuctionState,
   teamId: string
 ): FullAuctionState {
-  // Keep real team names in bid history / leading team — only hide other wallets.
   return {
     ...state,
     teams: state.teams.filter((t) => String(t._id) === String(teamId)),
@@ -39,11 +37,11 @@ export function AuctionRoom({
   role: "admin" | "auctioneer" | "team";
   myTeam?: { _id: string; name: string } | null;
 }) {
-  // Only admin runs the room (start / timer / sell). Auctioneers bid for one team.
+  // Only admin runs the room — start / timer / record the offline sale result.
+  // Auctioneer and team accounts are read-only: bidding happens verbally, offline.
   const canControl = role === "admin";
-  const canBid = role === "auctioneer" || role === "team";
   const canSell = role === "admin";
-  const showControls = canControl || canBid || canSell;
+  const showControls = canControl || canSell;
   const franchiseView = role === "auctioneer" || role === "team";
   const [squadRefreshKey, setSquadRefreshKey] = useState(0);
 
@@ -71,8 +69,7 @@ export function AuctionRoom({
         <AlertTriangle className="size-4" />
         <AlertTitle>No team assigned</AlertTitle>
         <AlertDescription>
-          Your login is not linked to a team. Ask an admin to assign your franchise
-          before you can bid.
+          Your login is not linked to a team. Ask an admin to assign your franchise.
         </AlertDescription>
       </Alert>
     );
@@ -97,25 +94,6 @@ export function AuctionRoom({
             <span className="tabular-money">
               Wallet ₹{myTeamSummary.remaining.toLocaleString("en-IN")}
             </span>
-            {isLive &&
-              viewState.auctionState.currentBidTeamId &&
-              String(viewState.auctionState.currentBidTeamId._id) ===
-                String(myTeamSummary._id) && (
-                <>
-                  <span>·</span>
-                  <span className="tabular-money text-live">
-                    In bid ₹{viewState.auctionState.currentBid.toLocaleString("en-IN")}
-                  </span>
-                  <span>·</span>
-                  <span className="tabular-money text-sold">
-                    Free ₹
-                    {Math.max(
-                      0,
-                      myTeamSummary.remaining - viewState.auctionState.currentBid
-                    ).toLocaleString("en-IN")}
-                  </span>
-                </>
-              )}
             <span>·</span>
             <span>
               Squad {myTeamSummary.squadCount}/{myTeamSummary.maxSquadSize}
@@ -161,8 +139,6 @@ export function AuctionRoom({
           <CardContent>
             <MyTeamPanel
               team={myTeamSummary}
-              leadingTeamId={viewState.auctionState.currentBidTeamId?._id}
-              currentBid={isLive ? viewState.auctionState.currentBid : 0}
               minReservePerSlot={viewState.settings?.minReservePerSlot ?? 0}
             />
           </CardContent>
@@ -179,22 +155,20 @@ export function AuctionRoom({
               </div>
             )}
             {isLive && (
-              <div className="mt-6">
-                <BidPanel
-                  auctionState={viewState.auctionState}
-                  bidHistory={viewState.bidHistory}
-                />
-              </div>
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Bidding happens verbally in the room.
+                {canSell ? " Record the result below once it's sold." : ""}
+              </p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Bid History</CardTitle>
+            <CardTitle className="text-base">Recent Sales</CardTitle>
           </CardHeader>
           <CardContent>
-            <BidHistoryList bids={viewState.bidHistory} />
+            <RecentSalesList sales={viewState.recentSales} />
           </CardContent>
         </Card>
       </div>
@@ -202,18 +176,10 @@ export function AuctionRoom({
       {showControls && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
-              {canBid && !canControl && !canSell ? "Place a Bid" : "Auction Controls"}
-            </CardTitle>
+            <CardTitle className="text-base">Auction Controls</CardTitle>
           </CardHeader>
           <CardContent>
-            <ControlPanel
-              state={viewState}
-              canControl={canControl}
-              canBid={canBid}
-              canSell={canSell}
-              myTeam={myTeam}
-            />
+            <ControlPanel state={viewState} canControl={canControl} canSell={canSell} />
           </CardContent>
         </Card>
       )}
@@ -235,11 +201,7 @@ export function AuctionRoom({
             <CardTitle className="text-base">Teams</CardTitle>
           </CardHeader>
           <CardContent>
-            <TeamWalletStrip
-              teams={viewState.teams}
-              leadingTeamId={viewState.auctionState.currentBidTeamId?._id}
-              currentBid={isLive ? viewState.auctionState.currentBid : 0}
-            />
+            <TeamWalletStrip teams={viewState.teams} />
           </CardContent>
         </Card>
       )}

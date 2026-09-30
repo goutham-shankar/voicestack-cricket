@@ -16,7 +16,6 @@ type SettingsDoc = {
   defaultWalletBudget: number;
   defaultMaxSquadSize: number;
   timerSeconds: number;
-  bidIncrement?: number;
   minReservePerSlot?: number;
 };
 
@@ -34,7 +33,6 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
       defaultWalletBudget: initialSettings.defaultWalletBudget,
       defaultMaxSquadSize: initialSettings.defaultMaxSquadSize,
       timerSeconds: initialSettings.timerSeconds,
-      bidIncrement: initialSettings.bidIncrement ?? 500,
       minReservePerSlot: initialSettings.minReservePerSlot ?? 1000,
     },
   });
@@ -97,7 +95,7 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="timerSeconds">Bid Timer (seconds)</Label>
+            <Label htmlFor="timerSeconds">Lot Timer (seconds)</Label>
             <Input
               id="timerSeconds"
               type="number"
@@ -105,18 +103,6 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
             />
             {errors.timerSeconds && (
               <p className="text-sm text-destructive">{errors.timerSeconds.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="bidIncrement">Bid Increment (₹)</Label>
-            <Input
-              id="bidIncrement"
-              type="number"
-              {...register("bidIncrement", { valueAsNumber: true })}
-            />
-            {errors.bidIncrement && (
-              <p className="text-sm text-destructive">{errors.bidIncrement.message}</p>
             )}
           </div>
 

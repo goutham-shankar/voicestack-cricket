@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { TeamSummary } from "@/lib/auction-types";
 
@@ -17,38 +16,24 @@ type SquadPlayer = {
 
 export function MyTeamPanel({
   team,
-  leadingTeamId,
-  currentBid = 0,
   minReservePerSlot = 0,
 }: {
   team: TeamSummary;
-  leadingTeamId?: string | null;
-  currentBid?: number;
   minReservePerSlot?: number;
 }) {
-  const isLeading = String(team._id) === String(leadingTeamId) && currentBid > 0;
   const wallet = team.remaining; // cash left after completed purchases
-  const inBid = isLeading ? currentBid : 0;
-  // Purse still free after locking the current high bid
-  const freeToAllocate = Math.max(0, wallet - inBid);
 
-  // Max they can still put on a new bid (keep reserve for remaining slots after a win)
-  const slotsAfterWin = Math.max(0, team.slotsRemaining - 1);
-  const slotReserve = slotsAfterWin * minReservePerSlot;
-  const maxBidAllowed = Math.max(0, wallet - slotReserve);
+  // Max they could still spend on the next player (keep reserve for remaining slots after)
+  const slotsAfterNextBuy = Math.max(0, team.slotsRemaining - 1);
+  const slotReserve = slotsAfterNextBuy * minReservePerSlot;
+  const maxNextBuy = Math.max(0, wallet - slotReserve);
 
   const budget = team.initialBudget || 1;
   const spentPct = Math.min(100, (team.spent / budget) * 100);
-  const inBidPct = Math.min(100 - spentPct, (inBid / budget) * 100);
 
   return (
     <div className="space-y-4">
-      <div
-        className={cn(
-          "flex flex-wrap items-center gap-4 rounded-xl border p-4",
-          isLeading ? "border-primary bg-primary/5" : "border-border"
-        )}
-      >
+      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border p-4">
         <Avatar className="size-14 rounded-xl">
           {team.logoUrl && <AvatarImage src={team.logoUrl} alt="" />}
           <AvatarFallback className="rounded-xl bg-secondary text-sm">
@@ -56,12 +41,7 @@ export function MyTeamPanel({
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-lg font-semibold">{team.name}</p>
-            {isLeading && (
-              <Badge className="border-0 bg-primary/15 text-primary">Leading bid</Badge>
-            )}
-          </div>
+          <p className="text-lg font-semibold">{team.name}</p>
           <p className="text-sm text-muted-foreground">
             Squad {team.squadCount}/{team.maxSquadSize}
             {slotReserve > 0 && (
@@ -74,7 +54,7 @@ export function MyTeamPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <PurseStat
           label="Wallet"
           hint="After purchases"
@@ -82,23 +62,16 @@ export function MyTeamPanel({
           accent="primary"
         />
         <PurseStat
-          label="In bid"
-          hint={isLeading ? "Locked on this lot" : "Not leading"}
-          value={inBid}
-          accent={inBid > 0 ? "live" : "muted"}
-          empty={!inBid}
+          label="Spent"
+          hint="Across purchases"
+          value={team.spent}
+          accent="muted"
         />
         <PurseStat
-          label="Free to allocate"
-          hint="Wallet minus in-bid"
-          value={freeToAllocate}
-          accent="sold"
-        />
-        <PurseStat
-          label="Max bid now"
+          label="Max next buy"
           hint="After slot reserve"
-          value={maxBidAllowed}
-          accent="primary"
+          value={maxNextBuy}
+          accent="sold"
         />
       </div>
 
@@ -119,24 +92,9 @@ export function MyTeamPanel({
         </div>
         <div className="relative h-2 overflow-hidden rounded-full bg-muted">
           <div
-            className="absolute inset-y-0 left-0 bg-muted-foreground/40"
+            className="absolute inset-y-0 left-0 bg-primary/70"
             style={{ width: `${spentPct}%` }}
           />
-          <div
-            className="absolute inset-y-0 bg-live/80"
-            style={{ left: `${spentPct}%`, width: `${inBidPct}%` }}
-          />
-        </div>
-        <div className="flex flex-wrap gap-3 text-[10px] uppercase tracking-wide text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-muted-foreground/40" /> Spent
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-live/80" /> In bid
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-muted" /> Free
-          </span>
         </div>
       </div>
     </div>

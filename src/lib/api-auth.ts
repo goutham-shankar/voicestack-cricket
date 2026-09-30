@@ -27,11 +27,6 @@ export async function requireAuctionControl() {
   return requireRole(["admin"]);
 }
 
-/** Place bids — franchise accounts (auctioneer or team) linked to a team. */
-export async function requireBidder() {
-  return requireRole(["auctioneer", "team"]);
-}
-
 /** Any authenticated app user. */
 export async function requireAuth() {
   return requireRole(["admin", "auctioneer", "team"]);

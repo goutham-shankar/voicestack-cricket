@@ -4,7 +4,6 @@ config({ path: ".env.local" });
 import mongoose from "mongoose";
 import PlayerModel from "../src/models/Player";
 import TeamModel from "../src/models/Team";
-import BidModel from "../src/models/Bid";
 import AuctionStateModel from "../src/models/AuctionState";
 import UserModel from "../src/models/User";
 
@@ -14,8 +13,7 @@ async function main() {
 
   await mongoose.connect(uri);
 
-  const [bids, players, teams, users] = await Promise.all([
-    BidModel.deleteMany({}),
+  const [players, teams, users] = await Promise.all([
     PlayerModel.deleteMany({}),
     TeamModel.deleteMany({}),
     UserModel.updateMany(
@@ -30,10 +28,6 @@ async function main() {
       $set: {
         status: "IDLE",
         currentPlayerId: null,
-        currentBid: 0,
-        currentBidTeamId: null,
-        bidCount: 0,
-        lotKey: null,
         timerEndsAt: null,
         timerRemainingMs: null,
         timerPaused: false,
@@ -43,7 +37,6 @@ async function main() {
   );
 
   console.log("Cleanup complete:");
-  console.log(`  bids deleted:    ${bids.deletedCount}`);
   console.log(`  players deleted: ${players.deletedCount}`);
   console.log(`  teams deleted:   ${teams.deletedCount}`);
   console.log(`  users unlinked:  ${users.modifiedCount}`);

@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 import { Types } from "mongoose";
 import { connectDB } from "@/lib/db";
 import { ServiceError } from "@/lib/services/service-error";
@@ -6,7 +5,6 @@ import AuctionStateModel from "@/models/AuctionState";
 import AuctionSettingsModel from "@/models/AuctionSettings";
 import PlayerModel from "@/models/Player";
 import TeamModel from "@/models/Team";
-import BidModel from "@/models/Bid";
 import "@/models/PlayerCategory";
 import "@/models/PlayerTag";
 import {
@@ -17,7 +15,6 @@ import {
 
 type AuctionSettingsLean = {
   timerSeconds?: number;
-  bidIncrement?: number;
   minReservePerSlot?: number;
 };
 
@@ -35,7 +32,6 @@ type ResolveResult =
 
 async function getSettings(): Promise<{
   timerSeconds: number;
-  bidIncrement: number;
   minReservePerSlot: number;
 }> {
   const settings = (await AuctionSettingsModel.findOne({
@@ -43,7 +39,6 @@ async function getSettings(): Promise<{
   }).lean()) as AuctionSettingsLean | null;
   return {
     timerSeconds: settings?.timerSeconds ?? 30,
-    bidIncrement: settings?.bidIncrement ?? 500,
     minReservePerSlot: settings?.minReservePerSlot ?? 1000,
   };
 }
@@ -54,26 +49,6 @@ async function getAuctionStateDoc() {
     { $setOnInsert: { singleton: "global" } },
     { upsert: true, returnDocument: "after" }
   );
-}
-
-function assertValidBidAmount(amount: number) {
-  if (typeof amount !== "number" || !Number.isFinite(amount) || !Number.isInteger(amount)) {
-    throw new ServiceError("Bid amount must be a finite integer");
-  }
-  if (amount <= 0) {
-    throw new ServiceError("Bid amount must be greater than zero");
-  }
-}
-
-function timerStillOpen(auctionState: {
-  timerEnabled: boolean;
-  timerPaused: boolean;
-  timerEndsAt: Date | null;
-}) {
-  if (!auctionState.timerEnabled) return true;
-  if (auctionState.timerPaused) return false;
-  if (!auctionState.timerEndsAt) return true;
-  return auctionState.timerEndsAt.getTime() > Date.now();
 }
 
 export async function getTeamFinancials(teamId: string) {
@@ -87,10 +62,7 @@ export async function getTeamFinancials(teamId: string) {
   return { spent: ledger.spent, squadCount };
 }
 
-export async function getAllTeamsSummary(options?: {
-  leadingTeamId?: string | null;
-  currentBid?: number;
-}) {
+export async function getAllTeamsSummary() {
   const [teams, squadAggregates, ledgerByTeam] = await Promise.all([
     TeamModel.find().sort({ name: 1 }).lean(),
     PlayerModel.aggregate([
@@ -101,16 +73,12 @@ export async function getAllTeamsSummary(options?: {
   ]);
 
   const squadByTeam = new Map(squadAggregates.map((a) => [String(a._id), a]));
-  const leadingTeamId = options?.leadingTeamId ?? null;
-  const currentBid = options?.currentBid ?? 0;
 
   return teams.map((team) => {
     const squadCount = squadByTeam.get(String(team._id))?.squadCount ?? 0;
     const ledger = ledgerByTeam.get(String(team._id));
     const spent = ledger?.spent ?? 0;
     const remaining = ledger?.remaining ?? team.initialBudget;
-    const committed =
-      leadingTeamId && String(team._id) === leadingTeamId ? currentBid : 0;
     return {
       _id: String(team._id),
       name: team.name,
@@ -119,7 +87,6 @@ export async function getAllTeamsSummary(options?: {
       maxSquadSize: team.maxSquadSize,
       spent,
       remaining,
-      available: remaining - committed,
       squadCount,
       slotsRemaining: team.maxSquadSize - squadCount,
     };
@@ -187,10 +154,6 @@ async function clearLiveAuctionState(
       $set: {
         status: "IDLE",
         currentPlayerId: null,
-        currentBid: 0,
-        currentBidTeamId: null,
-        bidCount: 0,
-        lotKey: null,
         timerEndsAt: null,
         timerRemainingMs: null,
         timerPaused: false,
@@ -198,6 +161,29 @@ async function clearLiveAuctionState(
     },
     { returnDocument: "after" }
   );
+}
+
+async function getRecentSales(limit = 8) {
+  const sold = await PlayerModel.find({ status: "SOLD" })
+    .populate("soldToTeamId")
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .lean();
+
+  return sold.map((player) => {
+    const team = player.soldToTeamId as unknown as
+      | { _id: Types.ObjectId; name: string; logoUrl: string | null }
+      | null;
+    return {
+      _id: String(player._id),
+      playerName: player.name,
+      avatarUrl: player.avatarUrl,
+      price: player.soldPrice ?? 0,
+      teamName: team?.name ?? "Unknown team",
+      teamLogoUrl: team?.logoUrl ?? null,
+      soldAt: (player as unknown as { updatedAt: Date }).updatedAt,
+    };
+  });
 }
 
 async function buildFullState() {
@@ -214,65 +200,45 @@ async function buildFullState() {
     }
   }
 
-  await auctionState.populate([
-    { path: "currentPlayerId", populate: ["categoryId", "tagIds"] },
-    { path: "currentBidTeamId" },
+  await auctionState.populate({
+    path: "currentPlayerId",
+    populate: ["categoryId", "tagIds"],
+  });
+
+  const [
+    totalPlayers,
+    soldCount,
+    unsoldCount,
+    pendingCount,
+    reauctionable,
+    soldAgg,
+    settings,
+    recentSales,
+  ] = await Promise.all([
+    PlayerModel.countDocuments(),
+    PlayerModel.countDocuments({ status: "SOLD" }),
+    PlayerModel.countDocuments({ status: "UNSOLD" }),
+    PlayerModel.countDocuments({ status: "PENDING" }),
+    PlayerModel.countDocuments({ status: { $in: ["PENDING", "UNSOLD"] } }),
+    PlayerModel.aggregate([
+      { $match: { status: "SOLD" } },
+      {
+        $group: {
+          _id: null,
+          totalSpent: { $sum: "$soldPrice" },
+          highestSale: { $max: "$soldPrice" },
+        },
+      },
+    ]),
+    getSettings(),
+    getRecentSales(),
   ]);
 
-  const bidHistory =
-    auctionState.currentPlayerId && auctionState.lotKey
-      ? await BidModel.find({
-          playerId: auctionState.currentPlayerId._id,
-          lotKey: auctionState.lotKey,
-        })
-          .sort({ createdAt: -1 })
-          .populate("teamId")
-          .lean()
-      : auctionState.currentPlayerId
-        ? await BidModel.find({ playerId: auctionState.currentPlayerId._id })
-            .sort({ createdAt: -1 })
-            .populate("teamId")
-            .lean()
-        : [];
-
-  const [totalPlayers, soldCount, unsoldCount, pendingCount, reauctionable, soldAgg, settings] =
-    await Promise.all([
-      PlayerModel.countDocuments(),
-      PlayerModel.countDocuments({ status: "SOLD" }),
-      PlayerModel.countDocuments({ status: "UNSOLD" }),
-      PlayerModel.countDocuments({ status: "PENDING" }),
-      PlayerModel.countDocuments({ status: { $in: ["PENDING", "UNSOLD"] } }),
-      PlayerModel.aggregate([
-        { $match: { status: "SOLD" } },
-        {
-          $group: {
-            _id: null,
-            totalSpent: { $sum: "$soldPrice" },
-            highestBid: { $max: "$soldPrice" },
-          },
-        },
-      ]),
-      getSettings(),
-    ]);
-
-  const leadingTeamId = auctionState.currentBidTeamId
-    ? String(
-        typeof auctionState.currentBidTeamId === "object" &&
-          auctionState.currentBidTeamId &&
-          "_id" in auctionState.currentBidTeamId
-          ? (auctionState.currentBidTeamId as { _id: Types.ObjectId })._id
-          : auctionState.currentBidTeamId
-      )
-    : null;
-
-  const teams = await getAllTeamsSummary({
-    leadingTeamId,
-    currentBid: auctionState.status === "LIVE" ? auctionState.currentBid : 0,
-  });
+  const teams = await getAllTeamsSummary();
 
   return {
     auctionState,
-    bidHistory,
+    recentSales,
     pendingPlayers: await PlayerModel.find({ status: { $in: ["PENDING", "UNSOLD"] } })
       .populate("categoryId")
       .populate("tagIds")
@@ -281,7 +247,6 @@ async function buildFullState() {
     teams,
     settings: {
       timerSeconds: settings.timerSeconds,
-      bidIncrement: settings.bidIncrement,
       minReservePerSlot: settings.minReservePerSlot,
     },
     stats: {
@@ -291,10 +256,7 @@ async function buildFullState() {
       remaining: reauctionable,
       pending: pendingCount,
       totalSpent: soldAgg[0]?.totalSpent ?? 0,
-      highestBid: Math.max(
-        soldAgg[0]?.highestBid ?? 0,
-        auctionState.status === "LIVE" ? auctionState.currentBid : 0
-      ),
+      highestSale: soldAgg[0]?.highestSale ?? 0,
     },
   };
 }
@@ -302,8 +264,9 @@ async function buildFullState() {
 type BuiltAuctionState = Awaited<ReturnType<typeof buildFullState>>;
 
 /**
- * If the live lot's timer has expired, auto-sell to the high bidder or mark unsold.
- * Safe to call from reads and writes; returns null when nothing changed.
+ * If the live lot's timer has expired without an offline sale being recorded
+ * yet, auto-mark it unsold so the room never stalls. Safe to call from reads
+ * and writes; returns null when nothing changed.
  */
 export async function resolveExpiredLot(): Promise<{
   state: BuiltAuctionState;
@@ -322,10 +285,7 @@ export async function resolveExpiredLot(): Promise<{
     return null;
   }
 
-  if (auctionState.currentBidTeamId) {
-    return sellPlayer(String(auctionState.currentBidTeamId), { fromTimer: true });
-  }
-  return markUnsold({ fromTimer: true });
+  return markUnsold();
 }
 
 export async function getFullState(options?: { resolveExpired?: boolean }) {
@@ -363,7 +323,6 @@ export async function startAuction(playerId: string) {
   }
 
   const { timerSeconds } = await getSettings();
-  const lotKey = randomUUID();
 
   // Claim the player first so two starts cannot put different players LIVE.
   const claimedPlayer = await PlayerModel.findOneAndUpdate(
@@ -384,10 +343,6 @@ export async function startAuction(playerId: string) {
       $set: {
         status: "LIVE",
         currentPlayerId: player._id,
-        currentBid: basePrice,
-        currentBidTeamId: null,
-        bidCount: 0,
-        lotKey,
         timerPaused: false,
         timerRemainingMs: null,
         timerEndsAt: timerEnabled
@@ -407,116 +362,6 @@ export async function startAuction(playerId: string) {
   }
 
   await repairOrphanLivePlayers(player._id);
-
-  return getFullState({ resolveExpired: false });
-}
-
-export async function placeBid(teamId: string, amount: number) {
-  await connectDB();
-
-  const resolved = await resolveExpiredLot();
-  if (resolved) {
-    throw new ServiceError("Bidding closed — the lot just ended");
-  }
-
-  assertValidBidAmount(amount);
-
-  if (!Types.ObjectId.isValid(teamId)) {
-    throw new ServiceError("Invalid team id", 400);
-  }
-
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
-    throw new ServiceError("No player is currently live");
-  }
-  if (auctionState.timerPaused) {
-    throw new ServiceError("Bidding is paused");
-  }
-  if (!timerStillOpen(auctionState)) {
-    const closed = await resolveExpiredLot();
-    if (closed) throw new ServiceError("Bidding closed — the lot just ended");
-    throw new ServiceError("Bidding time has expired");
-  }
-
-  const { bidIncrement, timerSeconds } = await getSettings();
-  // Bids always raise above the current/base price by at least one increment.
-  const minBid = auctionState.currentBid + bidIncrement;
-
-  if (amount < minBid) {
-    throw new ServiceError(
-      `Bid must be at least ₹${minBid.toLocaleString("en-IN")} (current ₹${auctionState.currentBid.toLocaleString("en-IN")} + ₹${bidIncrement.toLocaleString("en-IN")})`
-    );
-  }
-  if ((amount - auctionState.currentBid) % bidIncrement !== 0) {
-    throw new ServiceError(
-      `Bid must increase in steps of ₹${bidIncrement.toLocaleString("en-IN")}`
-    );
-  }
-
-  if (
-    auctionState.currentBidTeamId &&
-    String(auctionState.currentBidTeamId) === teamId
-  ) {
-    throw new ServiceError("Your team is already the highest bidder");
-  }
-
-  const team = await TeamModel.findById(teamId).lean();
-  if (!team) throw new ServiceError("Team not found", 404);
-
-  await assertTeamCanAfford(team, teamId, amount);
-
-  const lotKey = auctionState.lotKey ?? randomUUID();
-  if (!auctionState.lotKey) {
-    auctionState.lotKey = lotKey;
-    await auctionState.save();
-  }
-
-  const bid = await BidModel.create({
-    playerId: auctionState.currentPlayerId,
-    teamId,
-    amount,
-    lotKey,
-  });
-
-  const timerEndsAt = auctionState.timerEnabled
-    ? new Date(Date.now() + timerSeconds * 1000)
-    : null;
-
-  // Opening bid may equal base price; raises must be strictly higher.
-  const bidFilter: Record<string, unknown> = {
-    singleton: "global",
-    status: "LIVE",
-    currentPlayerId: auctionState.currentPlayerId,
-    lotKey,
-    timerPaused: false,
-    currentBidTeamId: auctionState.currentBidTeamId,
-    currentBid: { $lt: amount },
-    $or: [
-      { timerEnabled: false },
-      { timerEndsAt: null },
-      { timerEndsAt: { $gt: new Date() } },
-    ],
-  };
-
-  const updated = await AuctionStateModel.findOneAndUpdate(
-    bidFilter,
-    {
-      $set: {
-        currentBid: amount,
-        currentBidTeamId: new Types.ObjectId(teamId),
-        timerEndsAt,
-        timerPaused: false,
-        timerRemainingMs: null,
-      },
-      $inc: { bidCount: 1 },
-    },
-    { returnDocument: "after" }
-  );
-
-  if (!updated) {
-    await BidModel.deleteOne({ _id: bid._id });
-    throw new ServiceError("Bid rejected — auction state changed, try again");
-  }
 
   return getFullState({ resolveExpired: false });
 }
@@ -581,27 +426,15 @@ export async function setTimerEnabled(enabled: boolean) {
   return getFullState({ resolveExpired: false });
 }
 
-export async function resetBid() {
+/** Restarts the pacing timer for the current lot — there is no bid to reset anymore. */
+export async function resetTimer() {
   await connectDB();
   const auctionState = await getAuctionStateDoc();
   if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
     throw new ServiceError("No auction is live");
   }
 
-  const player = await PlayerModel.findById(auctionState.currentPlayerId).populate(
-    "categoryId"
-  );
-  if (!player) throw new ServiceError("Player not found", 404);
-
-  const basePrice = await basePriceFor(player);
   const { timerSeconds } = await getSettings();
-  const lotKey = randomUUID();
-
-  // Keep prior bids for history; new lotKey scopes the live bid list.
-  auctionState.currentBid = basePrice;
-  auctionState.currentBidTeamId = null;
-  auctionState.bidCount = 0;
-  auctionState.lotKey = lotKey;
   auctionState.timerPaused = false;
   auctionState.timerRemainingMs = null;
   auctionState.timerEndsAt = auctionState.timerEnabled
@@ -612,31 +445,26 @@ export async function resetBid() {
   return getFullState({ resolveExpired: false });
 }
 
-export async function sellPlayer(
-  teamId: string,
-  options?: { allowOverride?: boolean; fromTimer?: boolean }
-) {
+/**
+ * Admin records the final result of an offline (verbal) auction round —
+ * the winning team and the hammer price — and the player is marked sold.
+ */
+export async function sellPlayer(teamId: string, price: number) {
   await connectDB();
 
   if (!Types.ObjectId.isValid(teamId)) {
     throw new ServiceError("Invalid team id", 400);
   }
+  if (typeof price !== "number" || !Number.isFinite(price) || !Number.isInteger(price)) {
+    throw new ServiceError("Sold price must be a finite integer");
+  }
+  if (price <= 0) {
+    throw new ServiceError("Sold price must be greater than zero");
+  }
 
   const auctionState = await getAuctionStateDoc();
   if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
     throw new ServiceError("No player is currently live");
-  }
-
-  const leadingId = auctionState.currentBidTeamId
-    ? String(auctionState.currentBidTeamId)
-    : null;
-
-  if (!leadingId) {
-    throw new ServiceError("No bids to sell on — mark unsold instead");
-  }
-
-  if (teamId !== leadingId && !options?.allowOverride) {
-    throw new ServiceError("Player can only be sold to the current highest bidder");
   }
 
   const player = await PlayerModel.findById(auctionState.currentPlayerId);
@@ -646,7 +474,6 @@ export async function sellPlayer(
   const team = await TeamModel.findById(teamId).lean();
   if (!team) throw new ServiceError("Team not found", 404);
 
-  const price = auctionState.currentBid;
   await assertTeamCanAfford(team, teamId, price);
 
   const soldPlayer = await PlayerModel.findOneAndUpdate(
@@ -677,7 +504,7 @@ export async function sellPlayer(
   });
 
   const cleared = await clearLiveAuctionState(player._id);
-  if (!cleared && !options?.fromTimer) {
+  if (!cleared) {
     // Player already sold; force idle if still pointing at this player
     await AuctionStateModel.findOneAndUpdate(
       { singleton: "global", currentPlayerId: player._id },
@@ -685,10 +512,6 @@ export async function sellPlayer(
         $set: {
           status: "IDLE",
           currentPlayerId: null,
-          currentBid: 0,
-          currentBidTeamId: null,
-          bidCount: 0,
-          lotKey: null,
           timerEndsAt: null,
           timerRemainingMs: null,
           timerPaused: false,
@@ -703,23 +526,18 @@ export async function sellPlayer(
     result: {
       status: "SOLD" as const,
       playerName: player.name,
+      playerAvatarUrl: player.avatarUrl,
       teamName: team.name,
       price,
     },
   };
 }
 
-export async function markUnsold(options?: { fromTimer?: boolean; force?: boolean }) {
+export async function markUnsold() {
   await connectDB();
   const auctionState = await getAuctionStateDoc();
   if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
     throw new ServiceError("No player is currently live");
-  }
-
-  if (auctionState.currentBidTeamId && !options?.force && !options?.fromTimer) {
-    throw new ServiceError(
-      "There is an active high bid — confirm force unsold or sell to the leading team"
-    );
   }
 
   const player = await PlayerModel.findById(auctionState.currentPlayerId);

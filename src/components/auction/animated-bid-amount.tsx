@@ -195,7 +195,7 @@ function CasinoNumber({
   );
 }
 
-function MoneyFigure({
+export function MoneyFigure({
   amount,
   fromAmount,
   className,

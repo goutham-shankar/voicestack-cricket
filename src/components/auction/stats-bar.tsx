@@ -15,8 +15,8 @@ export function StatsBar({ stats }: { stats: AuctionStats }) {
         icon={Wallet}
       />
       <StatCard
-        label="Highest Bid"
-        value={`₹${stats.highestBid.toLocaleString("en-IN")}`}
+        label="Highest Sale"
+        value={`₹${stats.highestSale.toLocaleString("en-IN")}`}
         icon={TrendingUp}
         accent="gold"
       />

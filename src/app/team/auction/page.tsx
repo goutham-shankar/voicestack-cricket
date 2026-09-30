@@ -12,8 +12,8 @@ export default async function TeamAuctionPage() {
         <h1 className="text-xl font-semibold tracking-tight">Live Auction</h1>
         <p className="text-sm text-muted-foreground">
           {team
-            ? `Place bids for ${team.name}. Watch the timer, wallet and squad update in real time.`
-            : "Your account is not linked to a team — contact an admin before bidding."}
+            ? `Live view for ${team.name}. Watch the timer, wallet and squad update in real time.`
+            : "Your account is not linked to a team — contact an admin."}
         </p>
       </div>
       <AuctionRoom

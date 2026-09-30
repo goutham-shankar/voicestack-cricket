@@ -29,15 +29,6 @@ export type PlayerRef = {
   soldPrice: number | null;
 };
 
-export type BidRecord = {
-  _id: string;
-  playerId: string;
-  teamId: TeamRef;
-  amount: number;
-  lotKey?: string | null;
-  createdAt: string;
-};
-
 export type TeamSummary = {
   _id: string;
   name: string;
@@ -46,8 +37,6 @@ export type TeamSummary = {
   maxSquadSize: number;
   spent: number;
   remaining: number;
-  /** Remaining minus committed high bid when this team is leading. */
-  available: number;
   squadCount: number;
   slotsRemaining: number;
 };
@@ -55,10 +44,6 @@ export type TeamSummary = {
 export type AuctionStateDTO = {
   status: "IDLE" | "LIVE";
   currentPlayerId: PlayerRef | null;
-  currentBid: number;
-  currentBidTeamId: TeamRef | null;
-  bidCount: number;
-  lotKey?: string | null;
   timerEnabled: boolean;
   timerEndsAt: string | null;
   timerRemainingMs: number | null;
@@ -72,18 +57,27 @@ export type AuctionStats = {
   remaining: number;
   pending?: number;
   totalSpent: number;
-  highestBid: number;
+  highestSale: number;
 };
 
 export type AuctionRuntimeSettings = {
   timerSeconds: number;
-  bidIncrement: number;
   minReservePerSlot: number;
+};
+
+export type RecentSale = {
+  _id: string;
+  playerName: string;
+  avatarUrl: string | null;
+  price: number;
+  teamName: string;
+  teamLogoUrl: string | null;
+  soldAt: string;
 };
 
 export type FullAuctionState = {
   auctionState: AuctionStateDTO;
-  bidHistory: BidRecord[];
+  recentSales: RecentSale[];
   pendingPlayers: PlayerRef[];
   teams: TeamSummary[];
   settings: AuctionRuntimeSettings;
@@ -91,5 +85,11 @@ export type FullAuctionState = {
 };
 
 export type AuctionResult =
-  | { status: "SOLD"; playerName: string; teamName: string; price: number }
+  | {
+      status: "SOLD";
+      playerName: string;
+      playerAvatarUrl: string | null;
+      teamName: string;
+      price: number;
+    }
   | { status: "UNSOLD"; playerName: string };

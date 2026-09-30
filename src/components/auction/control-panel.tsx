@@ -41,7 +41,6 @@ import {
   Ban,
   Timer,
   Loader2,
-  AlertTriangle,
 } from "lucide-react";
 import type { FullAuctionState } from "@/lib/auction-types";
 
@@ -61,26 +60,24 @@ async function postJSON(url: string, body?: unknown) {
 export function ControlPanel({
   state,
   canControl,
-  canBid,
   canSell,
-  myTeam,
 }: {
   state: FullAuctionState;
   /** Start player, pause/resume/reset, toggle timer. */
   canControl: boolean;
-  /** Place bids for myTeam. */
-  canBid: boolean;
-  /** Confirm sale or mark unsold. */
+  /** Record the offline sale result or mark unsold. */
   canSell: boolean;
-  myTeam?: { _id: string; name: string } | null;
 }) {
-  const { auctionState, pendingPlayers, settings } = state;
+  const { auctionState, pendingPlayers } = state;
   const isLive = auctionState.status === "LIVE";
-  const bidIncrement = settings?.bidIncrement ?? 500;
-  const leadingTeam = auctionState.currentBidTeamId;
+  const player = auctionState.currentPlayerId;
+  const basePrice = player
+    ? (player.basePriceOverride ?? player.categoryId?.defaultBasePrice ?? 0)
+    : 0;
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>("");
-  const [bidAmount, setBidAmount] = useState<string>("");
+  const [sellTeamId, setSellTeamId] = useState<string>("");
+  const [sellPrice, setSellPrice] = useState<string>("");
   const [sellDialogOpen, setSellDialogOpen] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
@@ -95,18 +92,9 @@ export function ControlPanel({
     }
   }
 
-  // Input is a raise amount added on top of current/base price — not an absolute bid.
-  const raiseValue = Number(bidAmount);
-  const raiseAmount =
-    Number.isFinite(raiseValue) && raiseValue > 0 ? raiseValue : bidIncrement;
-  const finalBid = auctionState.currentBid + raiseAmount;
-
-  const increments = [
-    bidIncrement,
-    bidIncrement * 2,
-    bidIncrement * 5,
-    bidIncrement * 10,
-  ];
+  const priceValue = Number(sellPrice);
+  const priceValid = Number.isFinite(priceValue) && priceValue > 0;
+  const sellTeam = state.teams.find((t) => t._id === sellTeamId);
 
   return (
     <div className="space-y-5">
@@ -159,144 +147,6 @@ export function ControlPanel({
         </div>
       )}
 
-      {canBid && isLive && !myTeam && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <AlertTriangle className="size-4 shrink-0" />
-          Your account isn&apos;t linked to a team — ask an admin to fix this before
-          you can bid.
-        </div>
-      )}
-
-      {canBid && isLive && myTeam && (
-        <div className="space-y-2">
-          <Label>Bidding for {myTeam.name}</Label>
-          {leadingTeam?._id === myTeam._id ? (
-            <div className="space-y-1 text-sm">
-              <p className="text-muted-foreground">
-                You are the highest bidder at{" "}
-                <span className="font-semibold text-live tabular-money">
-                  ₹{auctionState.currentBid.toLocaleString("en-IN")}
-                </span>
-                .
-              </p>
-              {(() => {
-                const mine = state.teams.find((t) => t._id === myTeam._id);
-                if (!mine) return null;
-                const free = Math.max(0, mine.remaining - auctionState.currentBid);
-                return (
-                  <p className="text-muted-foreground">
-                    Free to allocate:{" "}
-                    <span className="font-semibold text-sold tabular-money">
-                      ₹{free.toLocaleString("en-IN")}
-                    </span>
-                  </p>
-                );
-              })()}
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground">
-                Current ₹{auctionState.currentBid.toLocaleString("en-IN")} · your
-                bid will be{" "}
-                <span className="font-semibold text-foreground tabular-money">
-                  ₹{finalBid.toLocaleString("en-IN")}
-                </span>
-                {myTeam &&
-                  (() => {
-                    const mine = state.teams.find((t) => t._id === myTeam._id);
-                    if (!mine) return null;
-                    const leftAfter = Math.max(0, mine.remaining - finalBid);
-                    return (
-                      <>
-                        {" "}
-                        · free after bid{" "}
-                        <span className="font-semibold text-sold tabular-money">
-                          ₹{leftAfter.toLocaleString("en-IN")}
-                        </span>
-                      </>
-                    );
-                  })()}
-              </p>
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="raise-amount" className="text-xs text-muted-foreground">
-                    Raise by
-                  </Label>
-                  <Input
-                    id="raise-amount"
-                    type="number"
-                    min={bidIncrement}
-                    step={bidIncrement}
-                    className="w-36"
-                    placeholder={String(bidIncrement)}
-                    value={bidAmount}
-                    onChange={(e) => setBidAmount(e.target.value)}
-                    disabled={auctionState.timerPaused}
-                  />
-                </div>
-                <Button
-                  disabled={loadingAction === "bid" || auctionState.timerPaused}
-                  onClick={() =>
-                    run("bid", async () => {
-                      if (raiseAmount < bidIncrement) {
-                        throw new Error(
-                          `Raise must be at least ₹${bidIncrement.toLocaleString("en-IN")}`
-                        );
-                      }
-                      if (raiseAmount % bidIncrement !== 0) {
-                        throw new Error(
-                          `Raise must be in steps of ₹${bidIncrement.toLocaleString("en-IN")}`
-                        );
-                      }
-                      await postJSON("/api/auction/bid", {
-                        teamId: myTeam._id,
-                        amount: auctionState.currentBid + raiseAmount,
-                      });
-                      setBidAmount("");
-                    })
-                  }
-                >
-                  {loadingAction === "bid" && <Loader2 className="size-4 animate-spin" />}
-                  Bid ₹{finalBid.toLocaleString("en-IN")}
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {increments.map((inc) => (
-                  <Button
-                    key={inc}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={auctionState.timerPaused}
-                    onClick={() =>
-                      setBidAmount(String((Number(bidAmount) || 0) + inc))
-                    }
-                  >
-                    +₹{inc.toLocaleString("en-IN")}
-                  </Button>
-                ))}
-                {bidAmount && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={auctionState.timerPaused}
-                    onClick={() => setBidAmount("")}
-                  >
-                    Reset
-                  </Button>
-                )}
-              </div>
-              {auctionState.timerPaused && (
-                <p className="text-xs text-muted-foreground">
-                  Bidding is paused until the timer resumes.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       {canControl && isLive && (
         <div className="flex flex-wrap items-center gap-2">
           {auctionState.timerPaused ? (
@@ -328,7 +178,7 @@ export function ControlPanel({
             onClick={() => run("reset", () => postJSON("/api/auction/reset"))}
           >
             <RotateCcw className="size-4" />
-            Reset Bid
+            Reset Timer
           </Button>
 
           <div className="ml-auto flex items-center gap-2 rounded-lg border border-border px-3 py-1.5">
@@ -355,40 +205,79 @@ export function ControlPanel({
 
       {canSell && isLive && (
         <div
-          className={
-            canControl || canBid
-              ? "flex gap-2 border-t border-border pt-4"
-              : "flex gap-2"
-          }
+          className={canControl ? "flex gap-2 border-t border-border pt-4" : "flex gap-2"}
         >
-          <Dialog open={sellDialogOpen} onOpenChange={setSellDialogOpen}>
+          <Dialog
+            open={sellDialogOpen}
+            onOpenChange={(next) => {
+              setSellDialogOpen(next);
+              if (next) {
+                setSellTeamId("");
+                setSellPrice(basePrice ? String(basePrice) : "");
+              }
+            }}
+          >
             <DialogTrigger
               render={
-                <Button
-                  className="flex-1 bg-sold text-sold-foreground hover:bg-sold/90"
-                  disabled={!leadingTeam}
-                >
+                <Button className="flex-1 bg-sold text-sold-foreground hover:bg-sold/90">
                   <Gavel className="size-4" />
-                  Sell Player
+                  Record Sale
                 </Button>
               }
             />
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Confirm sale</DialogTitle>
+                <DialogTitle>Record offline sale</DialogTitle>
                 <DialogDescription>
-                  Sell {auctionState.currentPlayerId?.name} to{" "}
-                  <strong>{leadingTeam?.name}</strong> for ₹
-                  {auctionState.currentBid.toLocaleString("en-IN")}.
+                  Bidding for {player?.name} happens verbally in the room — enter who
+                  won and the final hammer price.
                 </DialogDescription>
               </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Winning Team</Label>
+                  <Select value={sellTeamId} onValueChange={(v) => setSellTeamId(v ?? "")}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>
+                        {(v: string) =>
+                          state.teams.find((t) => t._id === v)?.name ?? "Select a team"
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {state.teams.map((t) => (
+                        <SelectItem key={t._id} value={t._id}>
+                          {t.name} · ₹{t.remaining.toLocaleString("en-IN")} left
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sell-price">Sold Price (₹)</Label>
+                  <Input
+                    id="sell-price"
+                    type="number"
+                    min={1}
+                    value={sellPrice}
+                    onChange={(e) => setSellPrice(e.target.value)}
+                  />
+                  {sellTeam && priceValid && priceValue > sellTeam.remaining && (
+                    <p className="text-xs text-destructive">
+                      Exceeds {sellTeam.name}&apos;s remaining wallet of ₹
+                      {sellTeam.remaining.toLocaleString("en-IN")}.
+                    </p>
+                  )}
+                </div>
+              </div>
               <DialogFooter>
                 <Button
-                  disabled={!leadingTeam || loadingAction === "sell"}
+                  disabled={!sellTeamId || !priceValid || loadingAction === "sell"}
                   onClick={() =>
                     run("sell", async () => {
                       await postJSON("/api/auction/sell", {
-                        teamId: leadingTeam?._id,
+                        teamId: sellTeamId,
+                        price: Math.round(priceValue),
                       });
                       setSellDialogOpen(false);
                     })
@@ -418,9 +307,7 @@ export function ControlPanel({
               <AlertDialogHeader>
                 <AlertDialogTitle>Mark player unsold?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {leadingTeam
-                    ? `${auctionState.currentPlayerId?.name} currently has a high bid from ${leadingTeam.name} at ₹${auctionState.currentBid.toLocaleString("en-IN")}. Forcing unsold will discard that bid.`
-                    : `${auctionState.currentPlayerId?.name} will be marked unsold and can be re-auctioned later.`}
+                  {player?.name} will be marked unsold and can be re-auctioned later.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -428,14 +315,10 @@ export function ControlPanel({
                 <AlertDialogAction
                   onClick={(e) => {
                     e.preventDefault();
-                    run("unsold", () =>
-                      postJSON("/api/auction/unsold", {
-                        force: Boolean(leadingTeam),
-                      })
-                    );
+                    run("unsold", () => postJSON("/api/auction/unsold"));
                   }}
                 >
-                  {leadingTeam ? "Force Unsold" : "Mark Unsold"}
+                  Mark Unsold
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

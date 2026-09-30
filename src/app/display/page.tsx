@@ -1,20 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AnimatePresence,
-  LayoutGroup,
-  motion,
-  useAnimationControls,
-} from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useAuctionState } from "@/lib/use-auction-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AuctionTimer } from "@/components/auction/auction-timer";
-import { AnimatedBidAmount } from "@/components/auction/animated-bid-amount";
-import { Trophy, Ban, Circle } from "lucide-react";
+import { AnimatedBidAmount, MoneyFigure } from "@/components/auction/animated-bid-amount";
+import { Trophy, Circle, Wallet, TrendingUp, Gavel } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { cn } from "@/lib/utils";
-import type { AuctionResult, BidRecord } from "@/lib/auction-types";
+import type { AuctionResult, AuctionStats, RecentSale } from "@/lib/auction-types";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 28 },
@@ -32,14 +27,23 @@ const stagger = {
 
 export default function DisplayPage() {
   const [flash, setFlash] = useState<AuctionResult | null>(null);
-  const [bidPulse, setBidPulse] = useState(0);
-  const prevBidRef = useRef<number | null>(null);
-  const bidShake = useAnimationControls();
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { state } = useAuctionState({
     onSold: (result) => {
       setFlash(result);
-      setTimeout(() => setFlash(null), 6500);
+      setTimeout(() => setFlash(null), 10000);
+      const audio = audioRef.current;
+      if (audio) {
+        if (audioStopRef.current) clearTimeout(audioStopRef.current);
+        audio.currentTime = 0;
+        void audio.play().catch(() => {});
+        audioStopRef.current = setTimeout(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        }, 7000);
+      }
     },
     onUnsold: (result) => {
       setFlash(result);
@@ -51,28 +55,37 @@ export default function DisplayPage() {
     document.title = "Live Auction Display";
   }, []);
 
-  const isLive = state?.auctionState.status === "LIVE";
-  const liveBid = state?.auctionState.currentBid ?? 0;
-
   useEffect(() => {
-    if (!isLive) {
-      prevBidRef.current = liveBid;
-      return;
+    // Browsers block audio-with-sound until the page has seen a user gesture.
+    // Silently prime playback on the first click/keypress anywhere so the
+    // later programmatic play() on a SOLD event isn't blocked — no visible UI.
+    function primeAudio() {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio
+        .play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        })
+        .catch(() => {});
+      window.removeEventListener("pointerdown", primeAudio);
+      window.removeEventListener("keydown", primeAudio);
     }
-    const prev = prevBidRef.current;
-    prevBidRef.current = liveBid;
-    if (prev == null || liveBid <= prev) return;
-    setBidPulse((n) => n + 1);
-    void bidShake.start({
-      scale: [1, 1.045, 1],
-      x: [0, -3, 3, -2, 0],
-      transition: { type: "tween", duration: 0.45, ease: "easeOut" },
-    });
-  }, [isLive, liveBid, bidShake]);
+    window.addEventListener("pointerdown", primeAudio);
+    window.addEventListener("keydown", primeAudio);
+    return () => {
+      window.removeEventListener("pointerdown", primeAudio);
+      window.removeEventListener("keydown", primeAudio);
+    };
+  }, []);
+
+  const isLive = state?.auctionState.status === "LIVE";
 
   if (!state) {
     return (
       <div className="flex min-h-svh items-center justify-center bg-background text-muted-foreground">
+        <audio ref={audioRef} src="/audio/ipl-theme.mp3" playsInline />
         <motion.div
           className="flex flex-col items-center gap-4"
           initial={{ opacity: 0, scale: 0.94 }}
@@ -84,6 +97,12 @@ export default function DisplayPage() {
           >
             <BrandLogo size={72} className="rounded-2xl opacity-90" />
           </motion.div>
+          <motion.div
+            animate={{ y: [0, -22, 0], rotate: [0, 300] }}
+            transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <CricketBall size={22} />
+          </motion.div>
           <p className="text-lg tracking-wide">Connecting to auction…</p>
         </motion.div>
       </div>
@@ -91,14 +110,14 @@ export default function DisplayPage() {
   }
 
   const player = state.auctionState.currentPlayerId;
-  const bidAmount = isLive
-    ? state.auctionState.currentBid
-    : (player?.basePriceOverride ?? player?.categoryId?.defaultBasePrice ?? 0);
-  const leadingTeam = state.auctionState.currentBidTeamId;
+  const basePrice = player
+    ? (player.basePriceOverride ?? player.categoryId?.defaultBasePrice ?? 0)
+    : 0;
 
   return (
     <div className="relative flex min-h-svh flex-col overflow-hidden bg-background text-foreground">
-      <Atmosphere isLive={!!isLive} bidPulse={bidPulse} />
+      <audio ref={audioRef} src="/audio/ipl-theme.mp3" playsInline />
+      <Atmosphere isLive={!!isLive} />
 
       {/* Top bar */}
       <motion.header
@@ -120,6 +139,15 @@ export default function DisplayPage() {
             </p>
             <p className="text-xs text-muted-foreground md:text-sm">Live Auction Board</p>
           </div>
+          {isLive && (
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+              className="ml-1 hidden sm:block"
+            >
+              <CricketBall size={22} />
+            </motion.div>
+          )}
         </div>
 
         <motion.div
@@ -150,41 +178,11 @@ export default function DisplayPage() {
       <main className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-4 md:px-10">
         <AnimatePresence mode="wait">
           {!player ? (
-            <motion.div
+            <IdleDashboard
               key="idle"
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.04, filter: "blur(8px)" }}
-              transition={{ duration: 0.5 }}
-              className="flex flex-col items-center gap-7 text-center"
-            >
-              <div className="relative">
-                <motion.div
-                  aria-hidden
-                  className="absolute -inset-10 rounded-full bg-primary/15 blur-3xl"
-                  animate={{ opacity: [0.35, 0.7, 0.35], scale: [0.9, 1.1, 0.9] }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                />
-                <motion.div
-                  animate={{ y: [0, -10, 0], rotate: [0, 2, -2, 0] }}
-                  transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
-                >
-                  <BrandLogo size={128} className="relative rounded-3xl shadow-2xl" />
-                </motion.div>
-              </div>
-              <div>
-                <motion.p
-                  className="text-3xl font-semibold tracking-tight md:text-5xl"
-                  animate={{ opacity: [0.7, 1, 0.7] }}
-                  transition={{ duration: 2.4, repeat: Infinity }}
-                >
-                  Waiting for next player
-                </motion.p>
-                <p className="mt-3 text-lg text-muted-foreground">
-                  The auction will resume shortly
-                </p>
-              </div>
-            </motion.div>
+              stats={state.stats}
+              recentSales={state.recentSales}
+            />
           ) : (
             <motion.div
               key={player._id}
@@ -256,72 +254,35 @@ export default function DisplayPage() {
                 </motion.div>
               </motion.div>
 
-              {/* Bid stage */}
+              {/* Sale stage */}
               <motion.div
                 variants={fadeUp}
                 className="relative flex flex-col items-center gap-6 text-center lg:items-stretch lg:text-left"
               >
-                <motion.div className="relative w-full" animate={bidShake}>
-                  <AnimatedBidAmount
-                    amount={bidAmount}
-                    size="lg"
-                    label={isLive ? "Current Bid" : "Base Price"}
-                  />
-                </motion.div>
+                <div className="relative w-full">
+                  <AnimatedBidAmount amount={basePrice} size="lg" label="Base Price" />
+                </div>
 
                 <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
                   <motion.div
-                    layout
-                    animate={
-                      leadingTeam
-                        ? {
-                            boxShadow: [
-                              "0 0 0px color-mix(in oklch, var(--primary) 0%, transparent)",
-                              "0 0 36px color-mix(in oklch, var(--primary) 28%, transparent)",
-                              "0 0 18px color-mix(in oklch, var(--primary) 12%, transparent)",
-                            ],
-                          }
-                        : {}
-                    }
-                    transition={{ duration: 0.7 }}
-                    className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-border/80 bg-card/50 px-5 py-4 backdrop-blur-sm"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden rounded-2xl border border-border/80 bg-card/50 px-5 py-4 backdrop-blur-sm"
                   >
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      Leading Team
-                    </p>
-                    <AnimatePresence mode="wait">
-                      <motion.p
-                        key={leadingTeam?._id ?? "none"}
-                        initial={{ opacity: 0, y: 18, filter: "blur(6px)", scale: 0.96 }}
-                        animate={{ opacity: 1, y: 0, filter: "blur(0px)", scale: 1 }}
-                        exit={{ opacity: 0, y: -12, filter: "blur(4px)" }}
-                        transition={{ type: "spring", stiffness: 280, damping: 20 }}
-                        className="mt-1 flex items-center justify-center gap-2 truncate text-2xl font-bold sm:text-3xl lg:justify-start"
-                      >
-                        {leadingTeam ? (
-                          <>
-                            <motion.span
-                              animate={{ rotate: [0, -14, 14, 0], scale: [1, 1.2, 1] }}
-                              transition={{ type: "tween", duration: 0.6, ease: "easeOut" }}
-                            >
-                              <Trophy className="size-6 shrink-0 text-primary" />
-                            </motion.span>
-                            <span className="truncate">{leadingTeam.name}</span>
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </motion.p>
-                    </AnimatePresence>
-                    <motion.p
-                      key={state.auctionState.bidCount}
-                      initial={{ opacity: 0.4, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-1 text-sm text-muted-foreground"
+                    <motion.span
+                      animate={{ rotate: [0, -8, 8, 0] }}
+                      transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                     >
-                      {state.auctionState.bidCount} bid
-                      {state.auctionState.bidCount === 1 ? "" : "s"}
-                    </motion.p>
+                      <Gavel className="size-6 shrink-0 text-primary" />
+                    </motion.span>
+                    <div className="min-w-0 text-left">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Bidding
+                      </p>
+                      <p className="mt-0.5 text-lg font-bold sm:text-xl">
+                        Live in the room
+                      </p>
+                    </div>
                   </motion.div>
 
                   {isLive && state.auctionState.timerEnabled && (
@@ -338,19 +299,13 @@ export default function DisplayPage() {
                     </motion.div>
                   )}
                 </div>
-
-                <BiddingTeamsList
-                  bids={state.bidHistory}
-                  leadingTeamId={leadingTeam?._id}
-                  bidPulse={bidPulse}
-                />
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      <BidQuoteGraph bids={state.bidHistory} isLive={!!isLive} />
+      <RecentSalesTicker sales={state.recentSales} />
 
       {/* Sold / Unsold flash */}
       <AnimatePresence>
@@ -377,14 +332,14 @@ function StaggerName({ name }: { name: string }) {
           className="inline-block"
           style={{ whiteSpace: char === " " ? "pre" : undefined }}
         >
-          {char === " " ? "\u00A0" : char}
+          {char === " " ? " " : char}
         </motion.span>
       ))}
     </h1>
   );
 }
 
-function Atmosphere({ isLive, bidPulse }: { isLive: boolean; bidPulse: number }) {
+function Atmosphere({ isLive }: { isLive: boolean }) {
   return (
     <>
       <div
@@ -405,6 +360,46 @@ function Atmosphere({ isLive, bidPulse }: { isLive: boolean; bidPulse: number })
           backgroundImage:
             "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
           backgroundSize: "64px 64px",
+        }}
+      />
+      {/* Stadium floodlight sweeps */}
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute -top-1/3 left-[10%] h-[140%] w-[26%] origin-top opacity-0"
+        style={{
+          background:
+            "conic-gradient(from 0deg, transparent, color-mix(in oklch, var(--primary) 14%, transparent), transparent 22%)",
+        }}
+        animate={
+          isLive
+            ? { rotate: [-16, 16, -16], opacity: [0, 0.5, 0] }
+            : { rotate: 0, opacity: 0 }
+        }
+        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute -top-1/3 right-[10%] h-[140%] w-[26%] origin-top opacity-0"
+        style={{
+          background:
+            "conic-gradient(from 0deg, transparent, color-mix(in oklch, var(--live) 12%, transparent), transparent 22%)",
+        }}
+        animate={
+          isLive
+            ? { rotate: [16, -16, 16], opacity: [0, 0.45, 0] }
+            : { rotate: 0, opacity: 0 }
+        }
+        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
+      />
+      {/* Pitch stripe at the base, like a mowed cricket square */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-40 opacity-[0.05]"
+        style={{
+          background:
+            "repeating-linear-gradient(90deg, var(--sold) 0px, var(--sold) 48px, transparent 48px, transparent 96px)",
+          maskImage: "linear-gradient(to top, black, transparent)",
+          WebkitMaskImage: "linear-gradient(to top, black, transparent)",
         }}
       />
       <motion.div
@@ -431,20 +426,234 @@ function Atmosphere({ isLive, bidPulse }: { isLive: boolean; bidPulse: number })
           transition={{ duration: 2.4, repeat: Infinity }}
         />
       )}
-      <AnimatePresence>
-        {bidPulse > 0 && (
-          <motion.div
-            key={bidPulse}
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-live/8"
-            initial={{ opacity: 0.5 }}
-            animate={{ opacity: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.55 }}
-          />
-        )}
-      </AnimatePresence>
     </>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  icon: Icon,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  icon: typeof Trophy;
+  accent: "sold" | "primary" | "gold" | "live";
+}) {
+  const accentClass = {
+    sold: "text-sold",
+    primary: "text-primary",
+    gold: "text-primary",
+    live: "text-live",
+  }[accent];
+
+  return (
+    <motion.div
+      variants={fadeUp}
+      className="flex flex-col items-center gap-1 rounded-2xl border border-border/70 bg-card/40 px-4 py-4 text-center backdrop-blur-sm"
+    >
+      <Icon className={cn("size-5", accentClass)} />
+      <p className={cn("tabular-money text-xl font-black sm:text-2xl", accentClass)}>
+        {value}
+      </p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+    </motion.div>
+  );
+}
+
+function IdleDashboard({
+  stats,
+  recentSales,
+}: {
+  stats: AuctionStats;
+  recentSales: RecentSale[];
+}) {
+  return (
+    <motion.div
+      variants={stagger}
+      initial="hidden"
+      animate="show"
+      exit={{ opacity: 0, scale: 1.04, filter: "blur(8px)" }}
+      className="flex w-full max-w-5xl flex-col items-center gap-8"
+    >
+      <motion.div variants={fadeUp} className="flex flex-col items-center gap-6 text-center">
+        <div className="relative">
+          <motion.div
+            aria-hidden
+            className="absolute -inset-10 rounded-full bg-primary/15 blur-3xl"
+            animate={{ opacity: [0.35, 0.7, 0.35], scale: [0.9, 1.1, 0.9] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div
+            animate={{ y: [0, -10, 0], rotate: [0, 2, -2, 0] }}
+            transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <BrandLogo size={96} className="relative rounded-3xl shadow-2xl" />
+          </motion.div>
+        </div>
+        <div>
+          <motion.p
+            className="text-2xl font-semibold tracking-tight md:text-4xl"
+            animate={{ opacity: [0.7, 1, 0.7] }}
+            transition={{ duration: 2.4, repeat: Infinity }}
+          >
+            Waiting for next player
+          </motion.p>
+          <p className="mt-2 text-base text-muted-foreground md:text-lg">
+            The auction will resume shortly
+          </p>
+        </div>
+      </motion.div>
+
+      <motion.div
+        variants={stagger}
+        className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4"
+      >
+        <StatTile label="Sold" value={stats.sold} icon={Trophy} accent="sold" />
+        <StatTile label="Remaining" value={stats.remaining} icon={Gavel} accent="primary" />
+        <StatTile
+          label="Total Spent"
+          value={`₹${stats.totalSpent.toLocaleString("en-IN")}`}
+          icon={Wallet}
+          accent="primary"
+        />
+        <StatTile
+          label="Highest Sale"
+          value={`₹${stats.highestSale.toLocaleString("en-IN")}`}
+          icon={TrendingUp}
+          accent="gold"
+        />
+      </motion.div>
+
+      {recentSales.length > 0 && (
+        <motion.p variants={fadeUp} className="text-xs text-muted-foreground">
+          Scroll the ticker below for the latest sales
+        </motion.p>
+      )}
+    </motion.div>
+  );
+}
+
+function CricketBall({ size = 24, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      width={size}
+      height={size}
+      className={className}
+      aria-hidden
+    >
+      <circle cx="50" cy="50" r="46" fill="var(--live)" stroke="oklch(0.3 0.05 25)" strokeWidth="2" />
+      <path
+        d="M 12 32 Q 50 8 88 32"
+        fill="none"
+        stroke="oklch(0.95 0.02 90)"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+        strokeDasharray="4 4"
+      />
+      <path
+        d="M 12 68 Q 50 92 88 68"
+        fill="none"
+        stroke="oklch(0.95 0.02 90)"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+        strokeDasharray="4 4"
+      />
+    </svg>
+  );
+}
+
+function SixCelebration() {
+  return (
+    <>
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 size-24 rounded-full"
+        style={{
+          background:
+            "radial-gradient(circle, oklch(0.98 0.05 90) 0%, color-mix(in oklch, var(--sold) 60%, transparent) 45%, transparent 72%)",
+          translate: "-140px 40px",
+        }}
+        initial={{ opacity: 0, scale: 0.3 }}
+        animate={{ opacity: [0, 1, 0], scale: [0.3, 2.2, 2.6] }}
+        transition={{ delay: 0.15, duration: 0.5, ease: "easeOut" }}
+      />
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2"
+        initial={{ x: -40, y: 30, opacity: 0, scale: 0.6 }}
+        animate={{
+          x: [-40, 60, 260, 480],
+          y: [30, -20, -160, -360],
+          rotate: [0, 200, 520, 900],
+          opacity: [0, 1, 1, 0],
+          scale: [0.6, 1, 0.9, 0.7],
+        }}
+        transition={{ delay: 0.32, duration: 1, ease: "easeOut" }}
+      >
+        <CricketBall size={30} />
+      </motion.div>
+      <motion.p
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 text-4xl font-black tracking-tight text-sold sm:text-5xl"
+        initial={{ opacity: 0, scale: 0.5, y: 10 }}
+        animate={{ opacity: [0, 1, 1, 0], scale: [0.5, 1.15, 1, 1], y: [10, 0, 0, -14] }}
+        transition={{ delay: 0.45, duration: 1.1, ease: "easeOut" }}
+      >
+        SIX!
+      </motion.p>
+    </>
+  );
+}
+
+function Stumps() {
+  const positions = [-24, 0, 24];
+  return (
+    <svg viewBox="0 0 160 140" width={150} height={132} aria-hidden>
+      {positions.map((offset, i) => (
+        <motion.rect
+          key={`stump-${i}`}
+          x={80 + offset - 5}
+          y="30"
+          width="10"
+          height="88"
+          rx="4"
+          fill="oklch(0.82 0.05 84)"
+          stroke="oklch(0.55 0.05 75)"
+          strokeWidth="1.5"
+          style={{ transformOrigin: `${80 + offset}px 118px` }}
+          initial={{ rotate: 0, x: 0 }}
+          animate={{ rotate: (i - 1) * 46, x: (i - 1) * 26 }}
+          transition={{ type: "spring", stiffness: 120, damping: 9, delay: 0.15 + i * 0.05 }}
+        />
+      ))}
+      <motion.rect
+        x="63"
+        y="24"
+        width="34"
+        height="7"
+        rx="3.5"
+        fill="oklch(0.82 0.05 84)"
+        initial={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
+        animate={{ x: -60, y: -70, rotate: -160, opacity: [1, 1, 0] }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+      />
+      <motion.rect
+        x="97"
+        y="24"
+        width="34"
+        height="7"
+        rx="3.5"
+        fill="oklch(0.82 0.05 84)"
+        initial={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
+        animate={{ x: 60, y: -80, rotate: 180, opacity: [1, 1, 0] }}
+        transition={{ duration: 0.8, ease: "easeOut", delay: 0.04 }}
+      />
+    </svg>
   );
 }
 
@@ -465,17 +674,47 @@ function flashKey(flash: AuctionResult) {
 }
 
 function makeConfetti(sold: boolean): ConfettiPiece[] {
-  return Array.from({ length: 28 }, (_, i) => ({
+  return Array.from({ length: sold ? 46 : 28 }, (_, i) => ({
     id: i,
-    x: (Math.random() - 0.5) * 520,
-    y: 180 + Math.random() * 280,
+    x: (Math.random() - 0.5) * 640,
+    y: 180 + Math.random() * 320,
     r: Math.random() * 360,
-    delay: Math.random() * 0.25,
-    size: 6 + Math.random() * 10,
+    delay: Math.random() * 0.3,
+    size: 6 + Math.random() * 11,
     hue: sold
       ? ["var(--sold)", "var(--primary)", "var(--live)"][i % 3]
       : "var(--muted-foreground)",
   }));
+}
+
+/** Rolls the digits up from zero to the hammer price, odometer-style. */
+function SoldPriceOdometer({ price }: { price: number }) {
+  const [spinning, setSpinning] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    const start = window.setTimeout(() => {
+      setRevealed(true);
+      setSpinning(true);
+    }, 450);
+    const stop = window.setTimeout(() => setSpinning(false), 2600);
+    return () => {
+      window.clearTimeout(start);
+      window.clearTimeout(stop);
+    };
+  }, []);
+
+  return (
+    <MoneyFigure
+      amount={revealed ? price : 0}
+      fromAmount={0}
+      casino
+      spinning={spinning}
+      spinKey={1}
+      className="text-sold drop-shadow-[0_0_28px_color-mix(in_oklch,var(--sold)_55%,transparent)]"
+      style={{ fontSize: "clamp(3rem, 8vw, 7.5rem)" }}
+    />
+  );
 }
 
 function ResultFlash({ flash }: { flash: AuctionResult }) {
@@ -496,6 +735,16 @@ function ResultFlash({ flash }: { flash: AuctionResult }) {
         sold ? "bg-sold/25" : "bg-unsold/45"
       )}
     >
+      {sold && (
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-white"
+          initial={{ opacity: 0.9 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        />
+      )}
+
       {rings.map((i) => (
         <motion.div
           key={i}
@@ -509,6 +758,8 @@ function ResultFlash({ flash }: { flash: AuctionResult }) {
           transition={{ duration: 1.4, delay: i * 0.12, ease: "easeOut" }}
         />
       ))}
+
+      {sold && <SixCelebration />}
 
       {sold &&
         confetti.map((p) => (
@@ -543,10 +794,26 @@ function ResultFlash({ flash }: { flash: AuctionResult }) {
         {sold ? (
           <>
             <motion.div
-              animate={{ y: [0, -8, 0], rotate: [0, -8, 8, 0], scale: [1, 1.12, 1] }}
-              transition={{ type: "tween", duration: 1.2, repeat: 2, ease: "easeInOut" }}
+              initial={{ scale: 0.6, opacity: 0, y: -16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 220, damping: 16 }}
+              className="relative"
             >
-              <Trophy className="size-20 text-sold sm:size-24" />
+              <Avatar className="size-28 rounded-2xl ring-4 ring-sold/60 shadow-2xl sm:size-32">
+                {flash.playerAvatarUrl && (
+                  <AvatarImage src={flash.playerAvatarUrl} alt="" className="object-cover" />
+                )}
+                <AvatarFallback className="rounded-2xl bg-secondary text-3xl font-bold sm:text-4xl">
+                  {flash.playerName.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <motion.div
+                animate={{ y: [0, -8, 0], rotate: [0, -8, 8, 0], scale: [1, 1.12, 1] }}
+                transition={{ type: "tween", duration: 1.2, repeat: 2, ease: "easeInOut" }}
+                className="absolute -bottom-3 -right-3 rounded-full bg-background p-1.5 shadow-lg"
+              >
+                <Trophy className="size-8 text-sold" />
+              </motion.div>
             </motion.div>
             <motion.p
               initial={{ letterSpacing: "0.55em", opacity: 0, scale: 0.85 }}
@@ -572,29 +839,25 @@ function ResultFlash({ flash }: { flash: AuctionResult }) {
             >
               to <span className="font-bold text-foreground">{flash.teamName}</span>
             </motion.p>
-            <motion.p
+            <motion.div
               initial={{ scale: 0.7, opacity: 0 }}
-              animate={{ scale: [0.7, 1.12, 1], opacity: 1 }}
-              transition={{
-                delay: 0.35,
-                type: "tween",
-                duration: 0.55,
-                ease: "easeOut",
-              }}
-              className="tabular-money text-4xl font-bold text-primary sm:text-5xl"
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.35, type: "spring", stiffness: 180, damping: 14 }}
+              className="relative"
             >
-              ₹{flash.price.toLocaleString("en-IN")}
-            </motion.p>
+              <motion.div
+                aria-hidden
+                className="pointer-events-none absolute -inset-6 rounded-full bg-primary/30 blur-2xl"
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: [0, 0.9, 0], scale: [0.6, 1.4, 1.6] }}
+                transition={{ delay: 0.55, duration: 0.9, ease: "easeOut" }}
+              />
+              <SoldPriceOdometer price={flash.price} />
+            </motion.div>
           </>
         ) : (
           <>
-            <motion.div
-              initial={{ rotate: -20, scale: 0.8 }}
-              animate={{ rotate: 0, scale: 1 }}
-              transition={{ type: "spring", stiffness: 200 }}
-            >
-              <Ban className="size-20 text-unsold-foreground sm:size-24" />
-            </motion.div>
+            <Stumps />
             <motion.p
               initial={{ letterSpacing: "0.4em", opacity: 0 }}
               animate={{ letterSpacing: "0.02em", opacity: 1 }}
@@ -610,80 +873,9 @@ function ResultFlash({ flash }: { flash: AuctionResult }) {
   );
 }
 
-function BidQuoteGraph({
-  bids,
-  isLive,
-}: {
-  bids: BidRecord[];
-  isLive: boolean;
-}) {
-  const quotes = useMemo(() => {
-    const chronological = [...bids].reverse();
-    return chronological.map((bid, index) => ({
-      id: String(bid._id),
-      index: index + 1,
-      amount: bid.amount,
-      teamId: String(bid.teamId?._id ?? ""),
-      name: bid.teamId?.name ?? "Unknown",
-      short:
-        (bid.teamId?.name ?? "?")
-          .split(/\s+/)
-          .map((w) => w[0])
-          .join("")
-          .slice(0, 3)
-          .toUpperCase() || "?",
-    }));
-  }, [bids]);
-
-  const chart = useMemo(() => {
-    const W = 1000;
-    const H = 160;
-    const padX = 16;
-    const padTop = 18;
-    const padBottom = 22;
-    const plotW = W - padX * 2;
-    const plotH = H - padTop - padBottom;
-    const empty = {
-      W,
-      H,
-      padTop,
-      plotH,
-      points: [] as { x: number; y: number; q: (typeof quotes)[number] }[],
-      line: "",
-      area: "",
-    };
-
-    if (quotes.length === 0) return empty;
-
-    // Scale to the bid range so a hike climbs the chart instead of sitting flat.
-    const amounts = quotes.map((q) => q.amount);
-    const minRaw = Math.min(...amounts);
-    const maxRaw = Math.max(...amounts);
-    const pad = Math.max((maxRaw - minRaw) * 0.18, 1);
-    const min = minRaw - pad;
-    const max = maxRaw + pad;
-    const span = max - min || 1;
-
-    const points = quotes.map((q, i) => {
-      const x =
-        quotes.length === 1 ? padX + plotW / 2 : padX + (i / (quotes.length - 1)) * plotW;
-      const y = padTop + (1 - (q.amount - min) / span) * plotH;
-      return { x, y, q };
-    });
-
-    const line = points
-      .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-      .join(" ");
-    const baseline = padTop + plotH;
-    const area = `${line} L ${points[points.length - 1].x.toFixed(1)} ${baseline.toFixed(1)} L ${points[0].x.toFixed(1)} ${baseline.toFixed(1)} Z`;
-
-    return { W, H, padTop, plotH, points, line, area };
-  }, [quotes]);
-
-  const last = quotes[quotes.length - 1];
-  const prev = quotes[quotes.length - 2];
-  const up = !prev || !last ? true : last.amount >= prev.amount;
-  const stroke = up ? "var(--sold)" : "var(--live)";
+function RecentSalesTicker({ sales }: { sales: RecentSale[] }) {
+  const CARD_W = 236; // card width (220) + gap (16)
+  const loop = useMemo(() => [...sales, ...sales], [sales]);
 
   return (
     <motion.footer
@@ -692,228 +884,54 @@ function BidQuoteGraph({
       transition={{ delay: 0.15 }}
       className="relative z-10 bg-transparent px-4 py-3 md:px-8"
     >
-      <div className="mx-auto flex max-w-6xl flex-col gap-1.5">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div className="flex items-baseline gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Live quotes
-            </p>
-            {last && (
-              <motion.p
-                key={last.id}
-                initial={{ opacity: 0.5, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={cn(
-                  "tabular-money text-lg font-black sm:text-xl",
-                  up ? "text-sold" : "text-live"
-                )}
-              >
-                ₹{last.amount.toLocaleString("en-IN")}
-                <span className="ml-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {last.name}
-                </span>
-              </motion.p>
-            )}
-          </div>
-          {quotes.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              {isLive ? "Waiting for the first quote…" : "No quotes this lot"}
-            </p>
-          )}
-        </div>
-
-        <div className="relative h-36 w-full overflow-hidden">
-          {quotes.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              {isLive ? "Market open — awaiting first bid" : "Market idle"}
-            </div>
-          ) : (
-            <svg
-              viewBox={`0 0 ${chart.W} ${chart.H}`}
-              className="h-full w-full bg-transparent"
-              preserveAspectRatio="xMidYMid meet"
-            >
-              <defs>
-                <linearGradient id="quoteFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={stroke} stopOpacity="0.12" />
-                  <stop offset="55%" stopColor={stroke} stopOpacity="0.04" />
-                  <stop offset="100%" stopColor={stroke} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-
-              <path d={chart.area} fill="url(#quoteFill)" />
-
-              <path
-                d={chart.line}
-                fill="none"
-                stroke={stroke}
-                strokeWidth="1.25"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
-
-              {chart.points.map((p, i) => {
-                const isLast = i === chart.points.length - 1;
-                return (
-                  <text
-                    key={p.q.id}
-                    x={p.x}
-                    y={chart.H - 6}
-                    textAnchor="middle"
-                    fill="currentColor"
-                    fillOpacity={isLast ? 0.9 : 0.4}
-                    fontSize="10"
-                    fontWeight="600"
-                  >
-                    {p.q.short}
-                  </text>
-                );
-              })}
-            </svg>
-          )}
-
-          {isLive && quotes.length > 0 && (
-            <motion.span
-              aria-hidden
-              className="pointer-events-none absolute right-3 top-2 h-1.5 w-1.5 rounded-full"
-              style={{ background: stroke }}
-              animate={{ opacity: [1, 0.25, 1], scale: [1, 1.4, 1] }}
-              transition={{ duration: 1.4, repeat: Infinity }}
-            />
-          )}
-        </div>
-      </div>
-    </motion.footer>
-  );
-}
-
-function BiddingTeamsList({
-  bids,
-  leadingTeamId,
-  bidPulse,
-}: {
-  bids: BidRecord[];
-  leadingTeamId?: string | null;
-  bidPulse: number;
-}) {
-  const rows = useMemo(() => {
-    const latestByTeam = new Map<
-      string,
-      { teamId: string; name: string; logoUrl: string | null; amount: number }
-    >();
-
-    for (const bid of bids) {
-      const id = String(bid.teamId?._id ?? "");
-      if (!id || latestByTeam.has(id)) continue;
-      latestByTeam.set(id, {
-        teamId: id,
-        name: bid.teamId?.name ?? "Unknown team",
-        logoUrl: bid.teamId?.logoUrl ?? null,
-        amount: bid.amount,
-      });
-    }
-
-    return [...latestByTeam.values()].sort((a, b) => b.amount - a.amount);
-  }, [bids]);
-
-  if (rows.length === 0) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: [0.5, 1, 0.5] }}
-        transition={{ duration: 2, repeat: Infinity }}
-        className="rounded-2xl border border-dashed border-border/80 px-5 py-4 text-sm text-muted-foreground"
-      >
-        Waiting for the first bid…
-      </motion.div>
-    );
-  }
-
-  return (
-    <LayoutGroup>
-      <motion.div
-        layout
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full rounded-2xl border border-border/80 bg-card/40 px-4 py-3 backdrop-blur-sm"
-      >
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Teams Bidding · {rows.length}
+      <div className="mx-auto flex max-w-6xl flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Recently Sold
         </p>
-        <ul className={cn("grid gap-2", rows.length > 2 && "sm:grid-cols-2")}>
-          <AnimatePresence initial={false} mode="popLayout">
-            {rows.map((row, index) => {
-              const isLeading = row.teamId === leadingTeamId;
-              return (
-                <motion.li
-                  key={row.teamId}
-                  layout
-                  initial={{ opacity: 0, x: -16, scale: 0.96 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.94 }}
-                  transition={{ type: "spring", stiffness: 320, damping: 26 }}
-                  className={cn(
-                    "relative flex items-center gap-3 rounded-xl border px-3 py-2.5",
-                    isLeading
-                      ? "border-primary/50 bg-primary/10 shadow-[0_0_28px_color-mix(in_oklch,var(--primary)_18%,transparent)]"
-                      : "border-border/60 bg-background/40"
-                  )}
+
+        {sales.length === 0 ? (
+          <div className="flex h-20 items-center justify-center rounded-2xl border border-dashed border-border/70 text-sm text-muted-foreground">
+            No players sold yet — the board updates as results come in.
+          </div>
+        ) : (
+          <div className="relative h-20 overflow-hidden">
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-background to-transparent" />
+            <motion.div
+              className="absolute inset-y-0 left-0 flex items-center gap-4"
+              animate={{ x: [0, -CARD_W * sales.length] }}
+              transition={{
+                duration: Math.max(sales.length * 3.5, 10),
+                repeat: Infinity,
+                ease: "linear",
+              }}
+            >
+              {loop.map((sale, i) => (
+                <div
+                  key={`${sale._id}-${i}`}
+                  className="flex w-56 shrink-0 items-center gap-3 rounded-xl border border-border/70 bg-card/50 px-3 py-2 backdrop-blur-sm"
                 >
-                  {isLeading && bidPulse > 0 && (
-                    <motion.span
-                      key={bidPulse}
-                      aria-hidden
-                      className="pointer-events-none absolute inset-0 rounded-xl bg-primary/15"
-                      initial={{ opacity: 0.55, scale: 1 }}
-                      animate={{ opacity: 0, scale: 1.04 }}
-                      transition={{ type: "tween", duration: 0.45, ease: "easeOut" }}
-                    />
-                  )}
-                  <motion.span
-                    layout
-                    className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                      isLeading
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {index + 1}
-                  </motion.span>
                   <Avatar className="size-9 rounded-lg">
-                    {row.logoUrl && <AvatarImage src={row.logoUrl} alt="" />}
+                    {sale.avatarUrl && <AvatarImage src={sale.avatarUrl} alt="" />}
                     <AvatarFallback className="rounded-lg bg-secondary text-[10px]">
-                      {row.name.slice(0, 2).toUpperCase()}
+                      {sale.playerName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="min-w-0 flex-1 text-left">
-                    <p className="truncate text-sm font-semibold sm:text-base">{row.name}</p>
-                    {isLeading && (
-                      <motion.p
-                        initial={{ opacity: 0, x: -4 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="text-[10px] font-semibold uppercase tracking-wide text-primary"
-                      >
-                        Leading
-                      </motion.p>
-                    )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{sale.playerName}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {sale.teamName}
+                    </p>
                   </div>
-                  <motion.p
-                    key={row.amount}
-                    initial={{ scale: 1.25, color: "var(--sold)", y: -4 }}
-                    animate={{ scale: 1, color: "var(--primary)", y: 0 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 18 }}
-                    className="tabular-money text-sm font-bold sm:text-base"
-                  >
-                    ₹{row.amount.toLocaleString("en-IN")}
-                  </motion.p>
-                </motion.li>
-              );
-            })}
-          </AnimatePresence>
-        </ul>
-      </motion.div>
-    </LayoutGroup>
+                  <span className="tabular-money shrink-0 text-sm font-bold text-sold">
+                    ₹{sale.price.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              ))}
+            </motion.div>
+          </div>
+        )}
+      </div>
+    </motion.footer>
   );
 }
