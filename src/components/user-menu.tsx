@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { signOut } from "next-auth/react";
 import {
@@ -33,9 +32,6 @@ export function UserMenu({
   role: "admin" | "auctioneer" | "team";
 }) {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const isDark = mounted && resolvedTheme === "dark";
 
   return (
     <DropdownMenu>
@@ -57,11 +53,12 @@ export function UserMenu({
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => setTheme(isDark ? "light" : "dark")}
-          disabled={!mounted}
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
         >
-          {isDark ? <Sun /> : <Moon />}
-          {isDark ? "Light mode" : "Dark mode"}
+          <Sun className="hidden dark:block" />
+          <Moon className="dark:hidden" />
+          <span className="hidden dark:inline">Light mode</span>
+          <span className="dark:hidden">Dark mode</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

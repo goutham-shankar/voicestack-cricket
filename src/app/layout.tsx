@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -17,12 +17,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Voicestack Cricket League",
-  description: "Live cricket player auction management platform",
-  icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+  title: {
+    default: "Voicestack Cricket League",
+    template: "%s · Voicestack Cricket League",
   },
+  description: "Live cricket player auction management platform",
+  applicationName: "Voicestack Cricket League",
+  manifest: "/manifest.webmanifest",
+  // Icons come from the app/ file conventions (icon.png, apple-icon.png,
+  // favicon.ico) — declaring them here as well would override those.
+  appleWebApp: {
+    capable: true,
+    title: "VCL Auction",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#4a3ce1",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -8,6 +8,7 @@
     "start": "cross-env NODE_ENV=production node server.js",
     "lint": "eslint",
     "seed:admin": "tsx scripts/seed-admin.ts",
+    "seed:auctioneer": "tsx scripts/seed-auctioneer.ts",
     "backfill:ledger": "tsx scripts/backfill-wallet-ledger.ts"
   },
   "dependencies": {

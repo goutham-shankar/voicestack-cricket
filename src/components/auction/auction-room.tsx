@@ -43,6 +43,7 @@ export function AuctionRoom({
   const canSell = role === "admin";
   const showControls = canControl || canSell;
   const franchiseView = role === "auctioneer" || role === "team";
+  const showRecentSales = role !== "auctioneer";
   const [squadRefreshKey, setSquadRefreshKey] = useState(0);
 
   const { state, connected } = useAuctionState({
@@ -87,20 +88,7 @@ export function AuctionRoom({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         {!franchiseView && <StatsBar stats={viewState.stats} />}
-        {franchiseView && myTeamSummary && (
-          <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{myTeamSummary.name}</span>
-            <span>·</span>
-            <span className="tabular-money">
-              Wallet ₹{myTeamSummary.remaining.toLocaleString("en-IN")}
-            </span>
-            <span>·</span>
-            <span>
-              Squad {myTeamSummary.squadCount}/{myTeamSummary.maxSquadSize}
-            </span>
-          </div>
-        )}
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {!connected && (
             <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
               <WifiOff className="size-3" />
@@ -145,8 +133,14 @@ export function AuctionRoom({
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+      <div
+        className={
+          showRecentSales
+            ? "grid grid-cols-1 gap-5 lg:grid-cols-3"
+            : "grid grid-cols-1 gap-5"
+        }
+      >
+        <Card className={showRecentSales ? "lg:col-span-2" : undefined}>
           <CardContent className="pt-6">
             <PlayerSpotlight player={viewState.auctionState.currentPlayerId} />
             {isLive && (
@@ -163,14 +157,16 @@ export function AuctionRoom({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent Sales</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RecentSalesList sales={viewState.recentSales} />
-          </CardContent>
-        </Card>
+        {showRecentSales && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Recent Sales</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RecentSalesList sales={viewState.recentSales} />
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {showControls && (
