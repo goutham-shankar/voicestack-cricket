@@ -5,7 +5,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useAuctionState } from "@/lib/use-auction-state";
 import { IdleMatchBackground } from "@/components/auction/idle-match-background";
 import { BroadcastHeader, VideoScrim } from "@/components/auction/display/broadcast-header";
-import { PlayerStage } from "@/components/auction/display/player-stage";
+import {
+  PlayerIdentity,
+  PlayerPortrait,
+} from "@/components/auction/display/player-stage";
 import { BidRail, type BidEntry } from "@/components/auction/display/bid-rail";
 import { WaitingStage } from "@/components/auction/display/waiting-stage";
 import { ShowcaseStage } from "@/components/auction/display/showcase-stage";
@@ -207,9 +210,10 @@ function Board({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.3 } }}
-              className="grid w-full grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-center gap-12 xl:gap-20"
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-8 xl:gap-12"
             >
-              <PlayerStage player={player} phase={phase} />
+              <PlayerIdentity player={player} phase={phase} />
+              <PlayerPortrait player={player} phase={phase} />
               <BidRail
                 phase={phase}
                 bids={LIVE_BIDS}

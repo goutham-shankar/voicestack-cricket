@@ -150,6 +150,27 @@
   vertical-align: middle; white-space: nowrap;
 }
 .vpl-board .player.idle { font-size: clamp(30px, 4vw, 46px); margin-top: 18px; }
+
+/* The lot's photo sits beside the name, falling back to initials. */
+.vpl-board .lot-player {
+  display: flex; align-items: center; gap: clamp(14px, 2vw, 26px); margin-top: 14px;
+}
+.vpl-board .lot-player .player { margin-top: 0; min-width: 0; }
+.vpl-board .lot-avatar {
+  flex: none; width: clamp(84px, 11vw, 148px); height: clamp(84px, 11vw, 148px);
+  border-radius: 14px; overflow: hidden; border: 3px solid var(--board-ink);
+  background: var(--plate);
+}
+.vpl-board .lot-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.vpl-board .lot-avatar-fallback {
+  display: grid; place-items: center; width: 100%; height: 100%;
+  font-family: var(--font-board-display), sans-serif; font-weight: 800;
+  font-size: clamp(32px, 4.5vw, 58px); color: var(--board-ink); background: transparent;
+}
+@media (max-width: 620px) {
+  .vpl-board .lot-player { gap: 12px; }
+  .vpl-board .lot-avatar { width: 72px; height: 72px; }
+}
 .vpl-board .lead-in { color: var(--board-muted); max-width: 60ch; margin: 12px 0 0; }
 .vpl-board .bidline {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 30px;

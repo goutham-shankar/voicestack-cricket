@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fmt } from "@/lib/auction-engine";
 import type { FullAuctionState } from "@/lib/auction-types";
 import { teamColor } from "@/components/auction/board/board-utils";
@@ -132,10 +133,20 @@ export function LotBoard({
         <span>Lot {auctionState.lotNo}</span>
       </div>
 
-      <h1 className="player">
-        {live.name}
-        {live.role && <span className="g">{live.role}</span>}
-      </h1>
+      <div className="lot-player">
+        <Avatar className="lot-avatar">
+          {live.avatarUrl && (
+            <AvatarImage src={live.avatarUrl} alt="" className="object-cover" />
+          )}
+          <AvatarFallback className="lot-avatar-fallback">
+            {live.name.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <h1 className="player">
+          {live.name}
+          {live.role && <span className="g">{live.role}</span>}
+        </h1>
+      </div>
 
       <div className="bidline">
         <div>
