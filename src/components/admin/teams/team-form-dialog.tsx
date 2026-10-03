@@ -28,6 +28,8 @@ export type TeamRecord = {
   initialBudget: number;
   maxSquadSize: number;
   loginEmail?: string | null;
+  captainMale?: string;
+  captainFemale?: string;
 };
 
 export function TeamFormDialog({
@@ -48,6 +50,8 @@ export function TeamFormDialog({
     logoUrl: team?.logoUrl ?? null,
     initialBudget: team?.initialBudget ?? 100000,
     maxSquadSize: team?.maxSquadSize ?? 12,
+    captainMale: team?.captainMale ?? "",
+    captainFemale: team?.captainFemale ?? "",
     loginEmail: "",
     loginPassword: "",
   };
@@ -70,7 +74,14 @@ export function TeamFormDialog({
     setLoading(true);
     try {
       const payload = isEdit
-        ? { name: values.name, logoUrl: values.logoUrl, initialBudget: values.initialBudget, maxSquadSize: values.maxSquadSize }
+        ? {
+            name: values.name,
+            logoUrl: values.logoUrl,
+            initialBudget: values.initialBudget,
+            maxSquadSize: values.maxSquadSize,
+            captainMale: values.captainMale,
+            captainFemale: values.captainFemale,
+          }
         : values;
 
       const res = await fetch(isEdit ? `/api/teams/${team!._id}` : "/api/teams", {
@@ -164,6 +175,35 @@ export function TeamFormDialog({
               {errors.maxSquadSize && (
                 <p className="text-sm text-destructive">
                   {errors.maxSquadSize.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="team-cap-m">Male Captain</Label>
+              <Input
+                id="team-cap-m"
+                placeholder="Not set"
+                {...register("captainMale")}
+              />
+              {errors.captainMale && (
+                <p className="text-sm text-destructive">
+                  {errors.captainMale.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="team-cap-f">Female Captain</Label>
+              <Input
+                id="team-cap-f"
+                placeholder="Not set"
+                {...register("captainFemale")}
+              />
+              {errors.captainFemale && (
+                <p className="text-sm text-destructive">
+                  {errors.captainFemale.message}
                 </p>
               )}
             </div>

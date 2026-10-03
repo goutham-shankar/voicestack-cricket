@@ -125,10 +125,7 @@ export function AuctionRoom({
             <CardTitle className="text-base">Your Team</CardTitle>
           </CardHeader>
           <CardContent>
-            <MyTeamPanel
-              team={myTeamSummary}
-              minReservePerSlot={viewState.settings?.minReservePerSlot ?? 0}
-            />
+            <MyTeamPanel team={myTeamSummary} />
           </CardContent>
         </Card>
       )}

@@ -62,7 +62,8 @@ export function CategoriesPanel({
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Default Base Price</TableHead>
-                <TableHead>Order</TableHead>
+                <TableHead>Round</TableHead>
+                <TableHead>Per Team</TableHead>
                 <TableHead className="w-24 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -74,6 +75,10 @@ export function CategoriesPanel({
                     ₹{cat.defaultBasePrice.toLocaleString("en-IN")}
                   </TableCell>
                   <TableCell>{cat.order}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    min {cat.minPerTeam ?? 0} · max{" "}
+                    {cat.maxPerTeam == null ? "unlimited" : cat.maxPerTeam}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <CategoryFormDialog

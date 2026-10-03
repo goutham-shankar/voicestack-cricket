@@ -21,45 +21,33 @@ async function fetchAuctionState(): Promise<FullAuctionState | null> {
   return res.json();
 }
 
-function playerId(state: FullAuctionState): string | null {
-  const player = state.auctionState.currentPlayerId;
-  return player ? String(player._id) : null;
-}
-
 /**
- * Derive the sold/unsold results that a socket would have pushed, by comparing
- * two polled snapshots. `recentSales[]._id` is the player id, so a sale that is
- * new to the latest snapshot means that player was just sold; a player that was
- * live and left the block without appearing in the sales feed went unsold.
+ * Derive the sold/unsold result that a socket would have pushed, by reading the
+ * settled-lot record the server stamps on every sale. Its `key` changes once
+ * per result, so comparing keys fires each overlay exactly once — and a snapshot
+ * that merely gained a bid produces no result at all.
  */
 function diffResults(
   prev: FullAuctionState,
   next: FullAuctionState,
 ): AuctionResult[] {
-  const seen = new Set(prev.recentSales.map((sale) => sale._id));
-  const results: AuctionResult[] = next.recentSales
-    .filter((sale) => !seen.has(sale._id))
-    .reverse()
-    .map((sale) => ({
-      status: "SOLD" as const,
-      playerName: sale.playerName,
-      playerAvatarUrl: sale.avatarUrl,
-      teamName: sale.teamName,
-      price: sale.price,
-    }));
+  const settled = next.auctionState.lastResult;
+  if (!settled) return [];
+  if (prev.auctionState.lastResult?.key === settled.key) return [];
 
-  const wasLive = prev.auctionState.currentPlayerId;
-  if (wasLive) {
-    const leftTheBlock = playerId(next) !== String(wasLive._id);
-    const sold = next.recentSales.some(
-      (sale) => sale._id === String(wasLive._id),
-    );
-    if (leftTheBlock && !sold) {
-      results.push({ status: "UNSOLD", playerName: wasLive.name });
-    }
+  if (settled.kind === "SOLD") {
+    const sale = next.recentSales.find((item) => item._id === settled.playerId);
+    return [
+      {
+        status: "SOLD",
+        playerName: settled.playerName,
+        playerAvatarUrl: sale?.avatarUrl ?? null,
+        teamName: settled.teamName ?? "Unknown team",
+        price: settled.amount ?? 0,
+      },
+    ];
   }
-
-  return results;
+  return [{ status: "UNSOLD", playerName: settled.playerName }];
 }
 
 export function useAuctionState({
@@ -195,5 +183,18 @@ export function useAuctionState({
     };
   }, [polling, applyPolled]);
 
-  return { state, connected };
+  /**
+   * Adopt a state that an action just returned, instead of waiting for the
+   * broadcast or the next poll. Routes answer with the whole state, so this is
+   * authoritative — and it keeps the board responsive on hosts where sockets
+   * are unavailable. Result overlays still fire, keyed off `lastResult`.
+   */
+  const apply = useCallback(
+    (next: FullAuctionState) => {
+      applyPolled(next);
+    },
+    [applyPolled]
+  );
+
+  return { state, connected, apply };
 }

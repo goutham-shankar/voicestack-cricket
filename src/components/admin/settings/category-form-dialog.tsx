@@ -24,7 +24,29 @@ export type CategoryRecord = {
   name: string;
   defaultBasePrice: number;
   order: number;
+  minPerTeam?: number;
+  maxPerTeam?: number | null;
 };
+
+/** Shared so the three reset sites below cannot drift apart. */
+const BLANK_CATEGORY: CategoryInput = {
+  name: "",
+  defaultBasePrice: 1000,
+  order: 0,
+  minPerTeam: 0,
+  maxPerTeam: null,
+};
+
+function toFormValues(category?: CategoryRecord): CategoryInput {
+  if (!category) return BLANK_CATEGORY;
+  return {
+    name: category.name,
+    defaultBasePrice: category.defaultBasePrice,
+    order: category.order,
+    minPerTeam: category.minPerTeam ?? 0,
+    maxPerTeam: category.maxPerTeam ?? null,
+  };
+}
 
 export function CategoryFormDialog({
   category,
@@ -46,7 +68,7 @@ export function CategoryFormDialog({
     formState: { errors },
   } = useForm<CategoryInput>({
     resolver: zodResolver(categorySchema),
-    defaultValues: category ?? { name: "", defaultBasePrice: 1000, order: 0 },
+    defaultValues: toFormValues(category),
   });
 
   async function onSubmit(values: CategoryInput) {
@@ -67,7 +89,7 @@ export function CategoryFormDialog({
       }
       toast.success(isEdit ? "Category updated" : "Category created");
       setOpen(false);
-      if (!isEdit) reset({ name: "", defaultBasePrice: 1000, order: 0 });
+      if (!isEdit) reset(BLANK_CATEGORY);
       onSaved();
     } finally {
       setLoading(false);
@@ -79,7 +101,7 @@ export function CategoryFormDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) reset(category ?? { name: "", defaultBasePrice: 1000, order: 0 });
+        if (next) reset(toFormValues(category));
       }}
     >
       <DialogTrigger
@@ -124,12 +146,57 @@ export function CategoryFormDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="cat-order">Display Order</Label>
+            <Label htmlFor="cat-order">Round Order</Label>
             <Input
               id="cat-order"
               type="number"
               {...register("order", { valueAsNumber: true })}
             />
+            <p className="text-xs text-muted-foreground">
+              Rounds are auctioned in this order. The first round is always open,
+              and it takes up whatever slack is left in the minimum squad size.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="cat-min">Minimum per Team</Label>
+              <Input
+                id="cat-min"
+                type="number"
+                {...register("minPerTeam", { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Each team must buy this many. Their base price is held back from
+                every other bid.
+              </p>
+              {errors.minPerTeam && (
+                <p className="text-sm text-destructive">
+                  {errors.minPerTeam.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cat-max">Maximum per Team</Label>
+              <Input
+                id="cat-max"
+                type="number"
+                placeholder="No limit"
+                {...register("maxPerTeam", {
+                  setValueAs: (v) =>
+                    v === "" || v === null ? null : Number(v),
+                })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank for no limit.
+              </p>
+              {errors.maxPerTeam && (
+                <p className="text-sm text-destructive">
+                  {errors.maxPerTeam.message}
+                </p>
+              )}
+            </div>
           </div>
 
           <DialogFooter>

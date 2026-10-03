@@ -16,7 +16,10 @@ type SettingsDoc = {
   defaultWalletBudget: number;
   defaultMaxSquadSize: number;
   timerSeconds: number;
-  minReservePerSlot?: number;
+  // Added with the auction board; older documents will not have them.
+  minSquadSize?: number;
+  bidIncrement?: number;
+  captainsCount?: boolean;
 };
 
 export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc }) {
@@ -33,7 +36,10 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
       defaultWalletBudget: initialSettings.defaultWalletBudget,
       defaultMaxSquadSize: initialSettings.defaultMaxSquadSize,
       timerSeconds: initialSettings.timerSeconds,
-      minReservePerSlot: initialSettings.minReservePerSlot ?? 1000,
+      minSquadSize:
+        initialSettings.minSquadSize ?? initialSettings.defaultMaxSquadSize,
+      bidIncrement: initialSettings.bidIncrement ?? 500,
+      captainsCount: initialSettings.captainsCount ?? true,
     },
   });
 
@@ -107,15 +113,58 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="minReservePerSlot">Min Reserve / Remaining Slot (₹)</Label>
+            <Label htmlFor="minSquadSize">Minimum Squad Size</Label>
             <Input
-              id="minReservePerSlot"
+              id="minSquadSize"
               type="number"
-              {...register("minReservePerSlot", { valueAsNumber: true })}
+              {...register("minSquadSize", { valueAsNumber: true })}
             />
-            {errors.minReservePerSlot && (
+            <p className="text-xs text-muted-foreground">
+              Every team must reach this. Category minimums are set per category
+              below; the first category takes up the slack.
+            </p>
+            {errors.minSquadSize && (
               <p className="text-sm text-destructive">
-                {errors.minReservePerSlot.message}
+                {errors.minSquadSize.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="bidIncrement">Bid Increment (₹)</Label>
+            <Input
+              id="bidIncrement"
+              type="number"
+              step="any"
+              {...register("bidIncrement", { valueAsNumber: true })}
+            />
+            <p className="text-xs text-muted-foreground">
+              The least each bid must rise by.
+            </p>
+            {errors.bidIncrement && (
+              <p className="text-sm text-destructive">
+                {errors.bidIncrement.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="captainsCount">Captains</Label>
+            <label className="flex min-h-9 items-center gap-2 text-sm">
+              <input
+                id="captainsCount"
+                type="checkbox"
+                className="size-4"
+                {...register("captainsCount")}
+              />
+              Count toward the squad
+            </label>
+            <p className="text-xs text-muted-foreground">
+              When on, each team&apos;s two captains fill two of its squad slots.
+            </p>
+            {errors.captainsCount && (
+              <p className="text-sm text-destructive">
+                {errors.captainsCount.message}
               </p>
             )}
           </div>

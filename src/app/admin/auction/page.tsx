@@ -1,4 +1,4 @@
-import { AuctionRoom } from "@/components/auction/auction-room";
+import { AuctionBoard } from "@/components/auction/board/auction-board";
 
 export default function AdminAuctionPage() {
   return (
@@ -6,11 +6,11 @@ export default function AdminAuctionPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Live Auction</h1>
         <p className="text-sm text-muted-foreground">
-          Start players if needed, manage the timer, and confirm each sale or mark
-          a player unsold.
+          Open a round, bring up a player, take bids with the team paddles, then
+          sell to the leading bid or mark the player unsold.
         </p>
       </div>
-      <AuctionRoom role="admin" />
+      <AuctionBoard />
     </div>
   );
 }

@@ -6,6 +6,8 @@ const teamSchema = new Schema(
     logoUrl: { type: String, default: null },
     initialBudget: { type: Number, required: true, default: 100000 },
     maxSquadSize: { type: Number, required: true, default: 12 },
+    captainMale: { type: String, default: "", trim: true },
+    captainFemale: { type: String, default: "", trim: true },
   },
   { timestamps: true }
 );
