@@ -8,16 +8,34 @@ import {
 } from "@/lib/socket-client";
 import type { AuctionResult, FullAuctionState } from "@/lib/auction-types";
 
-// How often we re-fetch state when sockets are unavailable (serverless hosts).
-// A backgrounded tab backs off instead of stopping, so it is never more than
-// one interval out of date.
+// How often we check for changes when sockets are unavailable (serverless
+// hosts). A backgrounded tab backs off instead of stopping, so it is never
+// more than one interval out of date.
 const POLL_INTERVAL_MS = 1500;
 const HIDDEN_POLL_INTERVAL_MS = 10000;
+
+/**
+ * Most polls find nothing has changed, and the full board costs ~112 Firestore
+ * reads to build. So each tick asks for a one-document change signature first
+ * and only pulls the board when it moves — roughly a hundredfold fewer reads
+ * while idle, at the same responsiveness.
+ *
+ * Edits made outside the auction (an admin renaming a player) do not move the
+ * signature, so the board is also refreshed in full on this slower timer.
+ */
+const FULL_REFRESH_EVERY_MS = 60000;
 
 async function fetchAuctionState(): Promise<FullAuctionState | null> {
   const res = await fetch("/api/auction/state", { cache: "no-store" });
   if (!res.ok) return null;
   return res.json();
+}
+
+async function fetchStateVersion(): Promise<string | null> {
+  const res = await fetch("/api/auction/version", { cache: "no-store" });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { version?: string };
+  return data.version ?? null;
 }
 
 /**
@@ -140,19 +158,33 @@ export function useAuctionState({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     let inFlight = false;
+    let lastVersion: string | null = null;
+    let lastFullFetch = 0;
 
     async function tick() {
       clearTimeout(timer);
       if (!inFlight) {
         inFlight = true;
         try {
-          const data = await fetchAuctionState();
+          const version = await fetchStateVersion();
           if (cancelled) return;
-          if (data) {
-            applyPolled(data);
-            setConnected(true);
+
+          const stale = Date.now() - lastFullFetch > FULL_REFRESH_EVERY_MS;
+          const changed = version === null || version !== lastVersion;
+
+          if (changed || stale) {
+            const data = await fetchAuctionState();
+            if (cancelled) return;
+            if (data) {
+              applyPolled(data);
+              lastVersion = version;
+              lastFullFetch = Date.now();
+              setConnected(true);
+            } else {
+              setConnected(false);
+            }
           } else {
-            setConnected(false);
+            setConnected(true);
           }
         } catch {
           if (!cancelled) setConnected(false);

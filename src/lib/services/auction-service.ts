@@ -601,6 +601,31 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
   };
 }
 
+/**
+ * A cheap signature of the board, read from the single auction-state document.
+ *
+ * Polling clients ask for this instead of the whole board: one document read
+ * rather than the ~112 a full snapshot costs. They pull the real state only
+ * when the signature moves. Every auction action — opening a lot, a bid, an
+ * undo, a sale, a round change — writes this document, so the signature
+ * changes with it.
+ *
+ * Edits made outside the auction (an admin renaming a player) do not touch it,
+ * so clients also refresh in full on a slow timer as a backstop.
+ */
+export async function getStateVersion(): Promise<string> {
+  const state = await getSingleton(AuctionStateStore);
+  return [
+    state.status,
+    state.currentPlayerId ?? "-",
+    state.lotNo ?? 0,
+    (state.bids ?? []).length,
+    state.lastResult?.key ?? "-",
+    state.showcase ? "1" : "0",
+    state.updatedAt.getTime(),
+  ].join(":");
+}
+
 export async function getFullState() {
   return buildFullState(await loadSnapshot());
 }
