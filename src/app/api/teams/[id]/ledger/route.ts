@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
 import { requireAuth } from "@/lib/api-auth";
 import { getUserTeamId } from "@/lib/session-team";
 import { getTeamLedger } from "@/lib/services/wallet-ledger";
@@ -21,7 +20,6 @@ export async function GET(
     }
   }
 
-  await connectDB();
   const ledger = await getTeamLedger(id);
   return NextResponse.json(ledger);
 }

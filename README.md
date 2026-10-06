@@ -1,5 +1,27 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Database
+
+Data lives in **Cloud Firestore**, reached from the server through the Firebase
+Admin SDK (`src/lib/firebase.ts`). Collections: `users`, `teams`, `players`,
+`playerCategories`, `playerTags`, `walletTransactions`, plus the single-document
+`auctionSettings/global` and `auctionState/global`.
+
+Set one of these in `.env.local`:
+
+- `FIREBASE_SERVICE_ACCOUNT_KEY` — the service-account JSON on one line, raw or
+  base64 (Firebase console → Project settings → Service accounts).
+- `GOOGLE_APPLICATION_CREDENTIALS` + `FIREBASE_PROJECT_ID` — a key file on disk.
+- `FIRESTORE_EMULATOR_HOST=localhost:8080` — the local emulator, no credential
+  needed.
+
+`src/lib/firestore.ts` is the small query layer the collections are built on. It
+sorts in memory rather than with `orderBy`, so no composite indexes are needed,
+and it enforces unique fields (team name, category name, tag name, user email)
+transactionally, because Firestore has no unique indexes.
+
+Seed a first login with `npm run seed:admin`.
+
 ## Getting Started
 
 First, run the development server:

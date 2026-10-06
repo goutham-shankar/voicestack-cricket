@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/api-auth";
 import { playerSchema } from "@/lib/validators/player";
-import PlayerModel from "@/models/Player";
-import "@/models/PlayerCategory";
-import "@/models/PlayerTag";
+import { Players } from "@/models/Player";
+import { populatePlayer } from "@/lib/services/populate";
 
 export async function GET(
   _req: NextRequest,
@@ -14,13 +12,9 @@ export async function GET(
   if (unauthorized) return unauthorized;
 
   const { id } = await params;
-  await connectDB();
-  const player = await PlayerModel.findById(id)
-    .populate("categoryId")
-    .populate("tagIds")
-    .lean();
+  const player = await Players.findById(id);
   if (!player) return NextResponse.json({ error: "Player not found" }, { status: 404 });
-  return NextResponse.json(player);
+  return NextResponse.json(await populatePlayer(player));
 }
 
 export async function PATCH(
@@ -37,8 +31,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  await connectDB();
-  const player = await PlayerModel.findById(id);
+  const player = await Players.findById(id);
   if (!player) return NextResponse.json({ error: "Player not found" }, { status: 404 });
 
   if (player.status === "SOLD") {
@@ -54,9 +47,8 @@ export async function PATCH(
     );
   }
 
-  Object.assign(player, parsed.data);
-  await player.save();
-  return NextResponse.json(player);
+  const updated = await Players.updateById(id, parsed.data);
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(
@@ -67,9 +59,8 @@ export async function DELETE(
   if (unauthorized) return unauthorized;
 
   const { id } = await params;
-  await connectDB();
 
-  const player = await PlayerModel.findById(id);
+  const player = await Players.findById(id);
   if (!player) return NextResponse.json({ error: "Player not found" }, { status: 404 });
 
   if (player.status === "SOLD") {
@@ -85,6 +76,6 @@ export async function DELETE(
     );
   }
 
-  await player.deleteOne();
+  await Players.deleteById(id);
   return NextResponse.json({ ok: true });
 }

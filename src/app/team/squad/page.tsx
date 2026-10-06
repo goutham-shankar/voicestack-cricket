@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
-import { connectDB } from "@/lib/db";
-import PlayerModel from "@/models/Player";
+import { Players } from "@/models/Player";
+import { populatePlayers } from "@/lib/services/populate";
 import { getUserTeam, getUserTeamId } from "@/lib/session-team";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,17 +10,17 @@ import { Users2, Wallet, Sparkles } from "lucide-react";
 
 export default async function TeamSquadPage() {
   const session = await auth();
-  await connectDB();
 
   const team = await getUserTeam(session?.user?.id);
   const teamId = await getUserTeamId(session?.user?.id);
 
   const players = teamId
-    ? await PlayerModel.find({ soldToTeamId: teamId, status: "SOLD" })
-        .populate("categoryId")
-        .populate("tagIds")
-        .sort({ updatedAt: -1 })
-        .lean()
+    ? await populatePlayers(
+        await Players.find(
+          { soldToTeamId: teamId, status: "SOLD" },
+          { sort: { updatedAt: -1 } }
+        )
+      )
     : [];
 
   const totalSpent = players.reduce((sum, p) => sum + (p.soldPrice ?? 0), 0);
@@ -28,7 +28,7 @@ export default async function TeamSquadPage() {
 
   const tagCounts = new Map<string, number>();
   for (const p of players) {
-    for (const tag of p.tagIds as unknown as { name: string }[]) {
+    for (const tag of p.tagIds) {
       tagCounts.set(tag.name, (tagCounts.get(tag.name) ?? 0) + 1);
     }
   }
@@ -84,10 +84,10 @@ export default async function TeamSquadPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {players.map((player) => {
-            const category = player.categoryId as unknown as { name: string } | null;
-            const tags = player.tagIds as unknown as { _id: string; name: string; color: string }[];
+            const category = player.categoryId;
+            const tags = player.tagIds;
             return (
-              <Card key={String(player._id)}>
+              <Card key={player._id}>
                 <CardContent className="space-y-3 pt-6">
                   <div className="flex items-center gap-3">
                     <Avatar className="size-12 rounded-xl">

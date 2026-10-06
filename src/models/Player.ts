@@ -1,31 +1,43 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
-import { PLAYER_ROLES, PLAYER_STATUSES } from "@/lib/constants";
+import { collection, type Doc } from "@/lib/firestore";
+import type { PLAYER_ROLES, PLAYER_STATUSES } from "@/lib/constants";
 
-const playerSchema = new Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    avatarUrl: { type: String, default: null },
-    role: { type: String, enum: PLAYER_ROLES, required: true },
-    categoryId: {
-      type: Schema.Types.ObjectId,
-      ref: "PlayerCategory",
-      required: true,
-    },
-    basePriceOverride: { type: Number, default: null, min: 0 },
-    tagIds: [{ type: Schema.Types.ObjectId, ref: "PlayerTag" }],
-    info: { type: String, default: "" },
-    status: {
-      type: String,
-      enum: PLAYER_STATUSES,
-      required: true,
-      default: "PENDING",
-    },
-    soldToTeamId: { type: Schema.Types.ObjectId, ref: "Team", default: null },
-    soldPrice: { type: Number, default: null },
-  },
-  { timestamps: true }
-);
+export type PlayerRole = (typeof PLAYER_ROLES)[number];
+export type PlayerStatus = (typeof PLAYER_STATUSES)[number];
 
-export type Player = InferSchemaType<typeof playerSchema>;
+export type Player = {
+  name: string;
+  /**
+   * Position in the roster as it was imported, so the app lists players in the
+   * same order as the source sheet. A batch import stamps every row with the
+   * same createdAt, so that field cannot carry this.
+   */
+  order: number;
+  avatarUrl: string | null;
+  role: PlayerRole;
+  categoryId: string;
+  basePriceOverride: number | null;
+  tagIds: string[];
+  info: string;
+  status: PlayerStatus;
+  soldToTeamId: string | null;
+  soldPrice: number | null;
+};
 
-export default models.Player || model("Player", playerSchema);
+export type PlayerDoc = Doc<Player>;
+
+export const Players = collection<Player>({
+  name: "players",
+  defaults: () => ({
+    name: "",
+    order: 0,
+    avatarUrl: null,
+    role: "Batsman",
+    categoryId: "",
+    basePriceOverride: null,
+    tagIds: [],
+    info: "",
+    status: "PENDING",
+    soldToTeamId: null,
+    soldPrice: null,
+  }),
+});

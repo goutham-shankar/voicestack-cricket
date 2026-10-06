@@ -1,6 +1,5 @@
-import { connectDB } from "@/lib/db";
-import TeamModel from "@/models/Team";
-import UserModel from "@/models/User";
+import { Users } from "@/models/User";
+import { getTeams } from "@/lib/services/catalog";
 import { TeamsTable } from "@/components/admin/teams/teams-table";
 
 function serialize<T>(data: T): T {
@@ -8,20 +7,18 @@ function serialize<T>(data: T): T {
 }
 
 export default async function AdminTeamsPage() {
-  await connectDB();
-
-  const teams = await TeamModel.find().sort({ name: 1 }).lean();
-  const teamUsers = await UserModel.find({ role: "team" })
-    .select("teamId email")
-    .lean();
+  const [teams, teamUsers] = await Promise.all([
+    getTeams(),
+    Users.find({ role: "team" }),
+  ]);
 
   const loginByTeamId = new Map(
-    teamUsers.map((u) => [String(u.teamId), u.email])
+    teamUsers.map((user) => [user.teamId, user.email])
   );
 
-  const teamsWithLogin = teams.map((t) => ({
-    ...t,
-    loginEmail: loginByTeamId.get(String(t._id)) ?? null,
+  const teamsWithLogin = teams.map((team) => ({
+    ...team,
+    loginEmail: loginByTeamId.get(team._id) ?? null,
   }));
 
   return (

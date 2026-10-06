@@ -1,9 +1,8 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import mongoose from "mongoose";
-import TeamModel from "../src/models/Team";
-import PlayerModel from "../src/models/Player";
+import { Teams } from "../src/models/Team";
+import { Players } from "../src/models/Player";
 import {
   recordTransaction,
   hasStartingBalanceEntry,
@@ -11,21 +10,14 @@ import {
 } from "../src/lib/services/wallet-ledger";
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("Missing MONGODB_URI");
-
-  await mongoose.connect(uri);
-
-  const teams = await TeamModel.find().lean();
+  const teams = await Teams.find();
   let creditsAdded = 0;
   let debitsAdded = 0;
 
   for (const team of teams) {
-    const teamId = String(team._id);
-
-    if (!(await hasStartingBalanceEntry(teamId))) {
+    if (!(await hasStartingBalanceEntry(team._id))) {
       await recordTransaction({
-        teamId,
+        teamId: team._id,
         type: "CREDIT",
         amount: team.initialBudget,
         note: "Starting balance",
@@ -33,21 +25,19 @@ async function main() {
       creditsAdded++;
     }
 
-    const soldPlayers = await PlayerModel.find({
-      soldToTeamId: team._id,
-      status: "SOLD",
-    })
-      .sort({ updatedAt: 1 })
-      .lean();
+    const soldPlayers = await Players.find(
+      { soldToTeamId: team._id, status: "SOLD" },
+      { sort: { updatedAt: 1 } }
+    );
 
     for (const player of soldPlayers) {
-      if (await hasPurchaseEntry(teamId, String(player._id))) continue;
+      if (await hasPurchaseEntry(team._id, player._id)) continue;
       await recordTransaction({
-        teamId,
+        teamId: team._id,
         type: "DEBIT",
         amount: -(player.soldPrice ?? 0),
         note: `Purchased ${player.name}`,
-        playerId: String(player._id),
+        playerId: player._id,
       });
       debitsAdded++;
     }
@@ -56,8 +46,6 @@ async function main() {
   console.log(`Backfilled ${teams.length} team(s):`);
   console.log(`  starting-balance entries added: ${creditsAdded}`);
   console.log(`  purchase entries added: ${debitsAdded}`);
-
-  await mongoose.disconnect();
 }
 
 main().catch((err) => {

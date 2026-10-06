@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { connectDB } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-auth";
 import { staffUserUpdateSchema } from "@/lib/validators/user";
-import { isDuplicateKeyError } from "@/lib/mongo-errors";
-import UserModel from "@/models/User";
-import "@/models/Team";
+import { isDuplicateKeyError } from "@/lib/db-errors";
+import { Users, type User } from "@/models/User";
+import { toStaffUserDTOs } from "@/lib/services/staff-users";
+
+/** Team logins are managed from the Teams page, so this route only sees staff. */
+function isStaff(role: User["role"]) {
+  return role === "admin" || role === "auctioneer";
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -21,13 +25,8 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  await connectDB();
-
-  const existing = await UserModel.findOne({
-    _id: id,
-    role: { $in: ["admin", "auctioneer"] },
-  });
-  if (!existing) {
+  const existing = await Users.findById(id);
+  if (!existing || !isStaff(existing.role)) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
@@ -39,13 +38,7 @@ export async function PATCH(
     );
   }
 
-  const updates: {
-    name: string;
-    email: string;
-    role: "admin" | "auctioneer";
-    teamId: string | null;
-    passwordHash?: string;
-  } = {
+  const updates: Partial<User> = {
     name: parsed.data.name,
     email: parsed.data.email,
     role: parsed.data.role,
@@ -57,17 +50,13 @@ export async function PATCH(
   }
 
   try {
-    const user = await UserModel.findByIdAndUpdate(id, updates, {
-      returnDocument: "after",
-    })
-      .select("name email role teamId")
-      .populate("teamId");
-
+    const user = await Users.updateById(id, updates);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json(user);
+    const [dto] = await toStaffUserDTOs([user]);
+    return NextResponse.json(dto);
   } catch (err: unknown) {
     if (isDuplicateKeyError(err)) {
       return NextResponse.json(
@@ -95,11 +84,11 @@ export async function DELETE(
     );
   }
 
-  await connectDB();
-  const deleted = await UserModel.findOneAndDelete({
-    _id: id,
-    role: { $in: ["admin", "auctioneer"] },
-  });
-  if (!deleted) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  const user = await Users.findById(id);
+  if (!user || !isStaff(user.role)) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  await Users.deleteById(id);
   return NextResponse.json({ ok: true });
 }

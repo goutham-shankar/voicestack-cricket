@@ -4,7 +4,7 @@ import { AuctionRoom } from "@/components/auction/auction-room";
 
 export default async function TeamAuctionPage() {
   const session = await auth();
-  const team = await getUserTeam(session?.user?.id, "name");
+  const team = await getUserTeam(session?.user?.id);
 
   return (
     <div className="space-y-6">

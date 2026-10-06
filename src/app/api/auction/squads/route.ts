@@ -1,61 +1,48 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
-import { connectDB } from "@/lib/db";
-import PlayerModel from "@/models/Player";
-import TeamModel from "@/models/Team";
+import { Players } from "@/models/Player";
+import { Teams } from "@/models/Team";
+import { PlayerCategories } from "@/models/PlayerCategory";
 import type { TeamSquad, SquadPlayer } from "@/lib/auction-types";
-
-type SoldPlayer = {
-  _id: unknown;
-  name?: string;
-  avatarUrl?: string | null;
-  role?: string;
-  soldPrice?: number | null;
-  categoryId?: { name?: string } | null;
-  soldToTeamId?: unknown;
-};
 
 /** Every team with the squad it bought — powers the end-of-auction showcase. */
 export async function GET() {
   const { response: unauthorized } = await requireAuth();
   if (unauthorized) return unauthorized;
 
-  await connectDB();
-
-  const [teams, sold] = await Promise.all([
-    TeamModel.find({}).sort({ name: 1 }).lean(),
-    PlayerModel.find({ status: "SOLD" })
-      .populate("categoryId")
-      .sort({ soldPrice: -1 })
-      .lean() as unknown as Promise<SoldPlayer[]>,
+  const [teams, sold, categories] = await Promise.all([
+    Teams.find(undefined, { sort: { name: 1 } }),
+    Players.find({ status: "SOLD" }, { sort: { soldPrice: -1 } }),
+    PlayerCategories.find(),
   ]);
 
+  const categoryNames = new Map(categories.map((c) => [c._id, c.name]));
+
   const byTeam = new Map<string, SquadPlayer[]>();
-  for (const p of sold) {
-    const teamId = p.soldToTeamId ? String(p.soldToTeamId) : null;
-    if (!teamId) continue;
-    const list = byTeam.get(teamId) ?? [];
+  for (const player of sold) {
+    if (!player.soldToTeamId) continue;
+    const list = byTeam.get(player.soldToTeamId) ?? [];
     list.push({
-      _id: String(p._id),
-      name: p.name ?? "",
-      avatarUrl: p.avatarUrl ?? null,
-      role: p.role ?? "",
-      category: p.categoryId?.name ?? null,
-      price: p.soldPrice ?? 0,
+      _id: player._id,
+      name: player.name,
+      avatarUrl: player.avatarUrl,
+      role: player.role,
+      category: categoryNames.get(player.categoryId) ?? null,
+      price: player.soldPrice ?? 0,
     });
-    byTeam.set(teamId, list);
+    byTeam.set(player.soldToTeamId, list);
   }
 
-  const squads: TeamSquad[] = teams.map((t) => {
-    const players = byTeam.get(String(t._id)) ?? [];
-    const spent = players.reduce((sum, p) => sum + p.price, 0);
+  const squads: TeamSquad[] = teams.map((team) => {
+    const players = byTeam.get(team._id) ?? [];
+    const spent = players.reduce((sum, player) => sum + player.price, 0);
     return {
-      _id: String(t._id),
-      name: t.name ?? "",
-      logoUrl: t.logoUrl ?? null,
+      _id: team._id,
+      name: team.name,
+      logoUrl: team.logoUrl,
       spent,
-      remaining: Math.max(0, (t.initialBudget ?? 0) - spent),
-      maxSquadSize: t.maxSquadSize ?? 0,
+      remaining: Math.max(0, team.initialBudget - spent),
+      maxSquadSize: team.maxSquadSize,
       players,
     };
   });

@@ -1,59 +1,63 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/firestore";
 
 export const AUCTION_STATUSES = ["IDLE", "LIVE"] as const;
 
+export type AuctionStatus = (typeof AUCTION_STATUSES)[number];
+
 /** One bid on the current lot. Replaced wholesale when a lot opens or closes. */
-const bidSchema = new Schema(
-  {
-    teamId: { type: Schema.Types.ObjectId, ref: "Team", required: true },
-    amount: { type: Number, required: true, min: 0 },
-    at: { type: Date, default: Date.now },
-  },
-  { _id: false }
-);
+export type StoredBid = {
+  teamId: string;
+  amount: number;
+  at: Date;
+};
 
 /** The last settled lot, kept so the board can show its SOLD/UNSOLD stamp. */
-const lastResultSchema = new Schema(
-  {
-    playerId: { type: Schema.Types.ObjectId, ref: "Player", required: true },
-    kind: { type: String, enum: ["SOLD", "UNSOLD"], required: true },
-    teamId: { type: Schema.Types.ObjectId, ref: "Team", default: null },
-    amount: { type: Number, default: null },
-    /** Changes per result, so the stamp animation replays exactly once. */
-    key: { type: String, required: true },
-  },
-  { _id: false }
-);
+export type StoredLastResult = {
+  playerId: string;
+  kind: "SOLD" | "UNSOLD";
+  teamId: string | null;
+  amount: number | null;
+  /** Changes per result, so the stamp animation replays exactly once. */
+  key: string;
+};
 
-const auctionStateSchema = new Schema(
-  {
-    singleton: { type: String, required: true, unique: true, default: "global" },
-    status: { type: String, enum: AUCTION_STATUSES, required: true, default: "IDLE" },
-    currentPlayerId: { type: Schema.Types.ObjectId, ref: "Player", default: null },
-    timerEnabled: { type: Boolean, default: true },
-    timerEndsAt: { type: Date, default: null },
-    timerRemainingMs: { type: Number, default: null },
-    timerPaused: { type: Boolean, default: false },
-    /** Final-squads showcase on the display board, driven by the admin. */
-    showcase: { type: Boolean, default: false },
+export type AuctionState = {
+  status: AuctionStatus;
+  currentPlayerId: string | null;
+  timerEnabled: boolean;
+  timerEndsAt: Date | null;
+  timerRemainingMs: number | null;
+  timerPaused: boolean;
+  /** Final-squads showcase on the display board, driven by the admin. */
+  showcase: boolean;
+  /** Categories whose round has been opened. The first round is always open. */
+  openCategoryIds: string[];
+  /** The round being auctioned now. */
+  currentCategoryId: string | null;
+  /** Bids on the current lot, oldest first. The last one is the standing bid. */
+  bids: StoredBid[];
+  /** Lot counter, shown on the board as "Lot N". */
+  lotNo: number;
+  lastResult: StoredLastResult | null;
+};
 
-    /** Categories whose round has been opened. The first round is always open. */
-    openCategoryIds: [{ type: Schema.Types.ObjectId, ref: "PlayerCategory" }],
-    /** The round being auctioned now. */
-    currentCategoryId: {
-      type: Schema.Types.ObjectId,
-      ref: "PlayerCategory",
-      default: null,
-    },
-    /** Bids on the current lot, oldest first. The last one is the standing bid. */
-    bids: { type: [bidSchema], default: [] },
-    /** Lot counter, shown on the board as "Lot N". */
-    lotNo: { type: Number, default: 0 },
-    lastResult: { type: lastResultSchema, default: null },
-  },
-  { timestamps: true }
-);
+export type AuctionStateDoc = Doc<AuctionState>;
 
-export type AuctionState = InferSchemaType<typeof auctionStateSchema>;
-
-export default models.AuctionState || model("AuctionState", auctionStateSchema);
+/** A single document, `auctionState/global` — read via `getAuctionState`. */
+export const AuctionStateStore = collection<AuctionState>({
+  name: "auctionState",
+  defaults: () => ({
+    status: "IDLE",
+    currentPlayerId: null,
+    timerEnabled: true,
+    timerEndsAt: null,
+    timerRemainingMs: null,
+    timerPaused: false,
+    showcase: false,
+    openCategoryIds: [],
+    currentCategoryId: null,
+    bids: [],
+    lotNo: 0,
+    lastResult: null,
+  }),
+});

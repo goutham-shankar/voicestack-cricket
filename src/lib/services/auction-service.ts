@@ -1,12 +1,18 @@
-import { Types } from "mongoose";
-import { connectDB } from "@/lib/db";
+import { getDb } from "@/lib/firebase";
+import { getSingleton } from "@/lib/firestore";
 import { ServiceError } from "@/lib/services/service-error";
-import AuctionStateModel from "@/models/AuctionState";
-import AuctionSettingsModel from "@/models/AuctionSettings";
-import PlayerModel from "@/models/Player";
-import TeamModel from "@/models/Team";
-import PlayerCategoryModel from "@/models/PlayerCategory";
-import "@/models/PlayerTag";
+import {
+  AuctionStateStore,
+  type AuctionStateDoc,
+  type StoredBid,
+  type StoredLastResult,
+} from "@/models/AuctionState";
+import { AuctionSettingsStore } from "@/models/AuctionSettings";
+import { Players, type PlayerDoc, type PlayerStatus } from "@/models/Player";
+import { Teams, type TeamDoc } from "@/models/Team";
+import { PlayerCategories, type PlayerCategoryDoc } from "@/models/PlayerCategory";
+import { PlayerTags, type PlayerTagDoc } from "@/models/PlayerTag";
+import type { PopulatedPlayer } from "@/lib/services/populate";
 import {
   allTeamStats,
   bidLimit,
@@ -28,13 +34,6 @@ import {
   recordTransaction,
 } from "@/lib/services/wallet-ledger";
 
-type AuctionSettingsLean = {
-  timerSeconds?: number;
-  minSquadSize?: number;
-  bidIncrement?: number;
-  captainsCount?: boolean;
-};
-
 type ResolveResult =
   | {
       status: "SOLD";
@@ -47,22 +46,86 @@ type ResolveResult =
       playerName: string;
     };
 
-async function getSettings(): Promise<{
+type RuntimeSettings = {
   timerSeconds: number;
   minSquadSize: number;
   bidIncrement: number;
   captainsCount: boolean;
-}> {
-  const settings = (await AuctionSettingsModel.findOne({
-    singleton: "global",
-  }).lean()) as AuctionSettingsLean | null;
+};
+
+/**
+ * Everything the board is derived from, read once per request.
+ *
+ * Firestore has no joins and no multi-collection read, so the only way to keep
+ * a board render cheap is to fetch each collection exactly once and compute
+ * from memory. Before this existed the state build re-read the whole player
+ * catalogue four times and the ledger twice; over a WAN each of those is a
+ * round trip, and a single bid cost seconds. These seven reads are issued
+ * together, so the whole snapshot costs about one round trip of latency.
+ */
+export type AuctionSnapshot = {
+  state: AuctionStateDoc;
+  settings: RuntimeSettings;
+  categories: PlayerCategoryDoc[];
+  tags: PlayerTagDoc[];
+  teams: TeamDoc[];
+  players: PlayerDoc[];
+  ledgerByTeam: Map<string, { remaining: number; spent: number }>;
+  categoriesById: Map<string, PlayerCategoryDoc>;
+  tagsById: Map<string, PlayerTagDoc>;
+  teamsById: Map<string, TeamDoc>;
+  playersById: Map<string, PlayerDoc>;
+};
+
+export async function loadSnapshot(): Promise<AuctionSnapshot> {
+  const [state, settingsDoc, categories, tags, teams, players, ledgerByTeam] =
+    await Promise.all([
+      getSingleton(AuctionStateStore),
+      getSingleton(AuctionSettingsStore),
+      PlayerCategories.find(undefined, { sort: { order: 1, name: 1 } }),
+      PlayerTags.find(undefined, { sort: { name: 1 } }),
+      Teams.find(undefined, { sort: { name: 1 } }),
+      Players.find(),
+      getAllLedgerSummaries(),
+    ]);
+
   return {
-    timerSeconds: settings?.timerSeconds ?? 30,
-    minSquadSize: settings?.minSquadSize ?? 12,
-    bidIncrement: settings?.bidIncrement ?? 500,
-    captainsCount: settings?.captainsCount ?? true,
+    state,
+    settings: {
+      timerSeconds: settingsDoc.timerSeconds ?? 30,
+      minSquadSize: settingsDoc.minSquadSize ?? 12,
+      bidIncrement: settingsDoc.bidIncrement ?? 500,
+      captainsCount: settingsDoc.captainsCount ?? true,
+    },
+    categories,
+    tags,
+    teams,
+    players,
+    ledgerByTeam,
+    categoriesById: new Map(categories.map((c) => [c._id, c])),
+    tagsById: new Map(tags.map((t) => [t._id, t])),
+    teamsById: new Map(teams.map((t) => [t._id, t])),
+    playersById: new Map(players.map((p) => [p._id, p])),
   };
 }
+
+async function getSettings(snap?: AuctionSnapshot): Promise<RuntimeSettings> {
+  if (snap) return snap.settings;
+  const settings = await getSingleton(AuctionSettingsStore);
+  return {
+    timerSeconds: settings.timerSeconds ?? 30,
+    minSquadSize: settings.minSquadSize ?? 12,
+    bidIncrement: settings.bidIncrement ?? 500,
+    captainsCount: settings.captainsCount ?? true,
+  };
+}
+
+/** The one `auctionState/global` document, created with defaults on first read. */
+function getAuctionState() {
+  return getSingleton(AuctionStateStore);
+}
+
+const stateRef = () => AuctionStateStore.ref().doc("global");
 
 /** A price is money: at most two decimal places, and above zero. */
 function assertMoney(value: unknown, label: string): number {
@@ -73,6 +136,13 @@ function assertMoney(value: unknown, label: string): number {
     throw new ServiceError(`${label} cannot have more than two decimal places`);
   }
   if (value <= 0) throw new ServiceError(`${label} must be greater than zero`);
+  return value;
+}
+
+function assertId(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new ServiceError(`Invalid ${label}`, 400);
+  }
   return value;
 }
 
@@ -89,21 +159,9 @@ type EngineContext = {
  * respected: budget is set to spent + remaining, making the engine's
  * `left` equal the ledger's `remaining`.
  */
-async function buildEngineContext(auctionState: {
-  openCategoryIds?: unknown;
-  currentCategoryId?: unknown;
-}): Promise<EngineContext> {
-  const [categoryDocs, teamDocs, playerDocs, settings, ledgerByTeam] =
-    await Promise.all([
-      PlayerCategoryModel.find().sort({ order: 1, name: 1 }).lean(),
-      TeamModel.find().sort({ name: 1 }).lean(),
-      PlayerModel.find({}, "name categoryId status soldToTeamId soldPrice").lean(),
-      getSettings(),
-      getAllLedgerSummaries(),
-    ]);
-
-  const categories: EngineCategory[] = categoryDocs.map((c) => ({
-    id: String(c._id),
+function buildEngineContext(snap: AuctionSnapshot): EngineContext {
+  const categories: EngineCategory[] = snap.categories.map((c) => ({
+    id: c._id,
     name: c.name,
     order: c.order ?? 0,
     basePrice: c.defaultBasePrice ?? 0,
@@ -111,12 +169,12 @@ async function buildEngineContext(auctionState: {
     maxPerTeam: c.maxPerTeam ?? null,
   }));
 
-  const teams: EngineTeam[] = teamDocs.map((team) => {
-    const ledger = ledgerByTeam.get(String(team._id));
+  const teams: EngineTeam[] = snap.teams.map((team) => {
+    const ledger = snap.ledgerByTeam.get(team._id);
     const spent = ledger?.spent ?? 0;
     const remaining = ledger?.remaining ?? team.initialBudget;
     return {
-      id: String(team._id),
+      id: team._id,
       name: team.name,
       budget: r2(spent + remaining),
       spent,
@@ -124,34 +182,31 @@ async function buildEngineContext(auctionState: {
     };
   });
 
-  const players: EnginePlayer[] = playerDocs.map((pl) => ({
-    id: String(pl._id),
+  const players: EnginePlayer[] = snap.players.map((pl) => ({
+    id: pl._id,
     name: pl.name,
-    categoryId: String(pl.categoryId),
+    categoryId: pl.categoryId,
     status: pl.status as EnginePlayer["status"],
-    teamId: pl.soldToTeamId ? String(pl.soldToTeamId) : null,
+    teamId: pl.soldToTeamId ?? null,
     price: pl.soldPrice ?? null,
   }));
 
-  const openIds = Array.isArray(auctionState.openCategoryIds)
-    ? auctionState.openCategoryIds.map((id) => String(id))
-    : [];
   // Tolerate stale ids the way the board's normalize() does.
   const known = new Set(categories.map((c) => c.id));
-  const currentRaw = auctionState.currentCategoryId
-    ? String(auctionState.currentCategoryId)
-    : null;
+  const currentRaw = snap.state.currentCategoryId ?? null;
 
   const input: EngineInput = {
     categories,
     teams,
     players,
     settings: {
-      minSquadSize: settings.minSquadSize,
-      bidIncrement: settings.bidIncrement,
-      captainsCount: settings.captainsCount,
+      minSquadSize: snap.settings.minSquadSize,
+      bidIncrement: snap.settings.bidIncrement,
+      captainsCount: snap.settings.captainsCount,
     },
-    openCategoryIds: openIds.filter((id) => known.has(id)),
+    openCategoryIds: (snap.state.openCategoryIds ?? []).filter((id) =>
+      known.has(id)
+    ),
     currentCategoryId:
       currentRaw && known.has(currentRaw)
         ? currentRaw
@@ -161,44 +216,33 @@ async function buildEngineContext(auctionState: {
   return { input, stats: allTeamStats(input), categories };
 }
 
-async function getAuctionStateDoc() {
-  return AuctionStateModel.findOneAndUpdate(
-    { singleton: "global" },
-    { $setOnInsert: { singleton: "global" } },
-    { upsert: true, returnDocument: "after" }
-  );
-}
-
 export async function getTeamFinancials(teamId: string) {
   const [squadCount, ledger] = await Promise.all([
-    PlayerModel.countDocuments({
-      soldToTeamId: new Types.ObjectId(teamId),
-      status: "SOLD",
-    }),
+    Players.count({ soldToTeamId: teamId, status: "SOLD" }),
     getLedgerSummary(teamId),
   ]);
   return { spent: ledger.spent, squadCount };
 }
 
-export async function getAllTeamsSummary() {
-  const [teams, squadAggregates, ledgerByTeam] = await Promise.all([
-    TeamModel.find().sort({ name: 1 }).lean(),
-    PlayerModel.aggregate([
-      { $match: { status: "SOLD", soldToTeamId: { $ne: null } } },
-      { $group: { _id: "$soldToTeamId", squadCount: { $sum: 1 } } },
-    ]),
-    getAllLedgerSummaries(),
-  ]);
+export async function getAllTeamsSummary(snap?: AuctionSnapshot) {
+  const resolved = snap ?? (await loadSnapshot());
 
-  const squadByTeam = new Map(squadAggregates.map((a) => [String(a._id), a]));
+  const squadByTeam = new Map<string, number>();
+  for (const player of resolved.players) {
+    if (player.status !== "SOLD" || !player.soldToTeamId) continue;
+    squadByTeam.set(
+      player.soldToTeamId,
+      (squadByTeam.get(player.soldToTeamId) ?? 0) + 1
+    );
+  }
 
-  return teams.map((team) => {
-    const squadCount = squadByTeam.get(String(team._id))?.squadCount ?? 0;
-    const ledger = ledgerByTeam.get(String(team._id));
+  return resolved.teams.map((team) => {
+    const squadCount = squadByTeam.get(team._id) ?? 0;
+    const ledger = resolved.ledgerByTeam.get(team._id);
     const spent = ledger?.spent ?? 0;
     const remaining = ledger?.remaining ?? team.initialBudget;
     return {
-      _id: String(team._id),
+      _id: team._id,
       name: team.name,
       logoUrl: team.logoUrl,
       initialBudget: team.initialBudget,
@@ -213,13 +257,17 @@ export async function getAllTeamsSummary() {
   });
 }
 
-async function basePriceFor(player: {
-  basePriceOverride?: number | null;
-  categoryId: unknown;
-}) {
+function basePriceOf(
+  player: { basePriceOverride?: number | null },
+  category: PlayerCategoryDoc | null
+) {
   if (player.basePriceOverride != null) return player.basePriceOverride;
-  const category = player.categoryId as { defaultBasePrice?: number } | null;
   return category?.defaultBasePrice ?? 0;
+}
+
+function basePriceFor(player: PlayerDoc, snap: AuctionSnapshot) {
+  if (player.basePriceOverride != null) return player.basePriceOverride;
+  return snap.categoriesById.get(player.categoryId)?.defaultBasePrice ?? 0;
 }
 
 /**
@@ -254,106 +302,83 @@ function assertTeamCanAfford(
   }
 }
 
-async function repairOrphanLivePlayers(currentPlayerId: Types.ObjectId | null) {
-  const filter = currentPlayerId
-    ? { status: "LIVE" as const, _id: { $ne: currentPlayerId } }
-    : { status: "LIVE" as const };
-  await PlayerModel.updateMany(filter, {
-    $set: { status: "PENDING" },
-  });
-}
+/**
+ * Any player left LIVE other than the current lot is a crash leftover. Reads
+ * the candidates from the snapshot and mends it in place, so the common case
+ * (nothing to repair) costs no Firestore calls at all.
+ */
+async function repairOrphanLivePlayers(
+  snap: AuctionSnapshot,
+  currentPlayerId: string | null
+) {
+  const orphans = snap.players.filter(
+    (player) => player.status === "LIVE" && player._id !== currentPlayerId
+  );
+  if (!orphans.length) return;
 
-type LastResultWrite = {
-  playerId: Types.ObjectId;
-  kind: "SOLD" | "UNSOLD";
-  teamId: Types.ObjectId | null;
-  amount: number | null;
-  key: string;
-};
+  await Promise.all(
+    orphans.map((player) => Players.updateById(player._id, { status: "PENDING" }))
+  );
+  for (const orphan of orphans) orphan.status = "PENDING";
+}
 
 /** A fresh key each time, so the board replays the stamp exactly once. */
-function resultKey(kind: "SOLD" | "UNSOLD", playerId: Types.ObjectId | string) {
-  return `${kind === "SOLD" ? "s" : "u"}-${String(playerId)}-${Date.now()}`;
+function resultKey(kind: "SOLD" | "UNSOLD", playerId: string) {
+  return `${kind === "SOLD" ? "s" : "u"}-${playerId}-${Date.now()}`;
 }
 
+/**
+ * Returns the state to IDLE, but only while it still points at the lot the
+ * caller settled — the Firestore transaction stands in for Mongo's
+ * conditional `findOneAndUpdate`. Returns null when another request got there
+ * first.
+ */
 async function clearLiveAuctionState(
-  expectedPlayerId: Types.ObjectId | string | null,
-  lastResult?: LastResultWrite
-) {
-  const filter: Record<string, unknown> = {
-    singleton: "global",
-    status: "LIVE",
-  };
-  if (expectedPlayerId) {
-    filter.currentPlayerId = expectedPlayerId;
-  }
+  expectedPlayerId: string | null,
+  lastResult?: StoredLastResult
+): Promise<AuctionStateDoc | null> {
+  return getDb().runTransaction(async (txn) => {
+    const snapshot = await txn.get(stateRef());
+    if (!snapshot.exists) return null;
 
-  return AuctionStateModel.findOneAndUpdate(
-    filter,
-    {
-      $set: {
-        status: "IDLE",
-        currentPlayerId: null,
-        timerEndsAt: null,
-        timerRemainingMs: null,
-        timerPaused: false,
-        bids: [],
-        ...(lastResult ? { lastResult } : {}),
-      },
-    },
-    { returnDocument: "after" }
-  );
+    const state = AuctionStateStore.hydrate(snapshot);
+    if (state.status !== "LIVE") return null;
+    if (expectedPlayerId && state.currentPlayerId !== expectedPlayerId) return null;
+
+    const patch = {
+      status: "IDLE" as const,
+      currentPlayerId: null,
+      timerEndsAt: null,
+      timerRemainingMs: null,
+      timerPaused: false,
+      bids: [],
+      ...(lastResult ? { lastResult } : {}),
+      updatedAt: new Date(),
+    };
+    txn.update(stateRef(), patch);
+    return { ...state, ...patch };
+  });
 }
 
 /**
  * Turns the stored state into the board's DTO: names on the last result, and
  * the open rounds normalised so the first round always reads as open.
  */
-type StoredLastResult = {
-  playerId: Types.ObjectId;
-  kind: "SOLD" | "UNSOLD";
-  teamId?: Types.ObjectId | null;
-  amount?: number | null;
-  key: string;
-};
-
-type StoredAuctionState = {
-  status: "IDLE" | "LIVE";
-  currentPlayerId: unknown;
-  timerEnabled?: boolean;
-  timerEndsAt?: Date | null;
-  timerRemainingMs?: number | null;
-  timerPaused?: boolean;
-  showcase?: boolean;
-  bids?: { teamId: Types.ObjectId; amount: number; at?: Date }[];
-  lotNo?: number;
-  lastResult?: StoredLastResult | null;
-};
-
-async function decorateStateForBoard(
-  auctionState: { toObject?: () => unknown } & Record<string, unknown>,
-  ctx: EngineContext
-) {
-  const raw = (
-    typeof auctionState.toObject === "function"
-      ? auctionState.toObject()
-      : auctionState
-  ) as StoredAuctionState;
-
-  const stored = raw.lastResult;
+function decorateStateForBoard(snap: AuctionSnapshot, ctx: EngineContext) {
+  const state = snap.state;
+  const stored = state.lastResult;
 
   let lastResult = null;
   if (stored?.playerId) {
-    const [player, team] = await Promise.all([
-      PlayerModel.findById(stored.playerId, "name").lean(),
-      stored.teamId ? TeamModel.findById(stored.teamId, "name").lean() : null,
-    ]);
+    // Both already in the snapshot, so naming the last result is free.
+    const player = snap.playersById.get(stored.playerId);
+    const team = stored.teamId ? snap.teamsById.get(stored.teamId) : null;
     if (player) {
       lastResult = {
-        playerId: String(stored.playerId),
+        playerId: stored.playerId,
         playerName: player.name,
         kind: stored.kind,
-        teamId: stored.teamId ? String(stored.teamId) : null,
+        teamId: stored.teamId ?? null,
         teamName: team?.name ?? null,
         amount: stored.amount ?? null,
         key: stored.key,
@@ -365,134 +390,143 @@ async function decorateStateForBoard(
   const open = new Set(ctx.input.openCategoryIds);
   if (ctx.categories.length) open.add(ctx.categories[0].id);
 
-  const bids = raw.bids ?? [];
+  const bids = state.bids ?? [];
 
   return {
-    status: raw.status,
-    currentPlayerId: raw.currentPlayerId,
-    timerEnabled: raw.timerEnabled ?? true,
-    timerEndsAt: raw.timerEndsAt ?? null,
-    timerRemainingMs: raw.timerRemainingMs ?? null,
-    timerPaused: raw.timerPaused ?? false,
-    showcase: raw.showcase ?? false,
+    status: state.status,
+    timerEnabled: state.timerEnabled ?? true,
+    timerEndsAt: state.timerEndsAt ?? null,
+    timerRemainingMs: state.timerRemainingMs ?? null,
+    timerPaused: state.timerPaused ?? false,
+    showcase: state.showcase ?? false,
     openCategoryIds: ctx.categories.filter((c) => open.has(c.id)).map((c) => c.id),
     currentCategoryId: ctx.input.currentCategoryId,
     bids: bids.map((bid) => ({
-      teamId: String(bid.teamId),
+      teamId: bid.teamId,
       amount: bid.amount,
       at: bid.at ?? null,
     })),
-    lotNo: raw.lotNo ?? 0,
+    lotNo: state.lotNo ?? 0,
     lastResult,
   };
 }
 
-async function getRecentSales(limit = 8) {
-  const sold = await PlayerModel.find({ status: "SOLD" })
-    .populate("soldToTeamId")
-    .sort({ updatedAt: -1 })
-    .limit(limit)
-    .lean();
-
-  return sold.map((player) => {
-    const team = player.soldToTeamId as unknown as
-      | { _id: Types.ObjectId; name: string; logoUrl: string | null }
-      | null;
-    return {
-      _id: String(player._id),
-      playerName: player.name,
-      avatarUrl: player.avatarUrl,
-      price: player.soldPrice ?? 0,
-      teamName: team?.name ?? "Unknown team",
-      teamLogoUrl: team?.logoUrl ?? null,
-      soldAt: (player as unknown as { updatedAt: Date }).updatedAt,
-    };
-  });
+/** Roster order as imported, falling back to creation time for older rows. */
+export function byRosterOrder(a: PlayerDoc, b: PlayerDoc) {
+  const byOrder = (a.order ?? 0) - (b.order ?? 0);
+  if (byOrder !== 0) return byOrder;
+  return a.createdAt.getTime() - b.createdAt.getTime();
 }
 
-async function buildFullState() {
-  const auctionState = await getAuctionStateDoc();
+/** Resolves a player's references out of the snapshot — no extra reads. */
+function decorateFromSnapshot(
+  player: PlayerDoc,
+  snap: AuctionSnapshot
+): PopulatedPlayer {
+  return {
+    ...player,
+    categoryId: snap.categoriesById.get(player.categoryId) ?? null,
+    tagIds: player.tagIds
+      .map((id) => snap.tagsById.get(id))
+      .filter((tag): tag is PlayerTagDoc => Boolean(tag)),
+  };
+}
 
-  if (auctionState.status === "IDLE") {
-    await repairOrphanLivePlayers(null);
-  } else if (auctionState.currentPlayerId) {
-    await repairOrphanLivePlayers(auctionState.currentPlayerId);
-    const livePlayer = await PlayerModel.findById(auctionState.currentPlayerId).lean();
+async function buildFullState(snapshot?: AuctionSnapshot) {
+  const snap = snapshot ?? (await loadSnapshot());
+  const state = snap.state;
+
+  if (state.status === "IDLE") {
+    await repairOrphanLivePlayers(snap, null);
+  } else if (state.currentPlayerId) {
+    await repairOrphanLivePlayers(snap, state.currentPlayerId);
+    const livePlayer = snap.playersById.get(state.currentPlayerId);
     if (!livePlayer || livePlayer.status === "SOLD" || livePlayer.status === "UNSOLD") {
-      await clearLiveAuctionState(auctionState.currentPlayerId);
+      await clearLiveAuctionState(state.currentPlayerId);
       return buildFullState();
     }
   }
 
-  await auctionState.populate({
-    path: "currentPlayerId",
-    populate: ["categoryId", "tagIds"],
-  });
+  const ctx = buildEngineContext(snap);
+  const teamSummaries = await getAllTeamsSummary(snap);
 
-  const [
-    totalPlayers,
-    soldCount,
-    unsoldCount,
-    pendingCount,
-    reauctionable,
-    soldAgg,
-    settings,
-    recentSales,
-  ] = await Promise.all([
-    PlayerModel.countDocuments(),
-    PlayerModel.countDocuments({ status: "SOLD" }),
-    PlayerModel.countDocuments({ status: "UNSOLD" }),
-    PlayerModel.countDocuments({ status: "PENDING" }),
-    PlayerModel.countDocuments({ status: { $in: ["PENDING", "UNSOLD"] } }),
-    PlayerModel.aggregate([
-      { $match: { status: "SOLD" } },
-      {
-        $group: {
-          _id: null,
-          totalSpent: { $sum: "$soldPrice" },
-          highestSale: { $max: "$soldPrice" },
-        },
-      },
-    ]),
-    getSettings(),
-    getRecentSales(),
-  ]);
+  // One pass over the catalogue in place of Mongo's counts and $group aggregate.
+  const stats = {
+    totalPlayers: snap.players.length,
+    sold: 0,
+    unsold: 0,
+    remaining: 0,
+    pending: 0,
+    totalSpent: 0,
+    highestSale: 0,
+  };
+  for (const player of snap.players) {
+    if (player.status === "SOLD") {
+      stats.sold++;
+      const price = player.soldPrice ?? 0;
+      stats.totalSpent += price;
+      stats.highestSale = Math.max(stats.highestSale, price);
+    } else if (player.status === "UNSOLD") {
+      stats.unsold++;
+    } else if (player.status === "PENDING") {
+      stats.pending++;
+    }
+  }
+  stats.remaining = stats.pending + stats.unsold;
 
-  const [teamSummaries, ctx] = await Promise.all([
-    getAllTeamsSummary(),
-    buildEngineContext(auctionState),
-  ]);
+  const recentSales = snap.players
+    .filter((player) => player.status === "SOLD")
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, 8)
+    .map((player) => {
+      const team = player.soldToTeamId
+        ? snap.teamsById.get(player.soldToTeamId)
+        : null;
+      return {
+        _id: player._id,
+        playerName: player.name,
+        avatarUrl: player.avatarUrl,
+        price: player.soldPrice ?? 0,
+        teamName: team?.name ?? "Unknown team",
+        teamLogoUrl: team?.logoUrl ?? null,
+        soldAt: player.updatedAt,
+      };
+    });
 
-  const livePlayer = auctionState.currentPlayerId as unknown as {
-    _id: Types.ObjectId;
-    name: string;
-    categoryId: { _id: Types.ObjectId; defaultBasePrice?: number } | null;
-    basePriceOverride?: number | null;
-  } | null;
+  const pendingPlayers = snap.players
+    .filter((player) => player.status === "PENDING" || player.status === "UNSOLD")
+    .sort(byRosterOrder)
+    .map((player) => decorateFromSnapshot(player, snap));
+
+  const liveRaw = state.currentPlayerId
+    ? (snap.playersById.get(state.currentPlayerId) ?? null)
+    : null;
+  const livePlayer: PopulatedPlayer | null = liveRaw
+    ? decorateFromSnapshot(liveRaw, snap)
+    : null;
 
   // The round in play is the live lot's own category, otherwise the open round.
-  const roundCategoryId = livePlayer?.categoryId
-    ? String(livePlayer.categoryId._id)
-    : ctx.input.currentCategoryId;
+  const roundCategoryId =
+    livePlayer?.categoryId?._id ?? ctx.input.currentCategoryId;
 
   const teams = teamSummaries.map((team) => {
-    const stats = ctx.stats.get(team._id);
-    if (!stats || !ctx.categories.length) return team;
+    const teamStats = ctx.stats.get(team._id);
+    if (!teamStats || !ctx.categories.length) return team;
     const limit = roundCategoryId
       ? bidLimit(ctx.input, team._id, roundCategoryId, ctx.stats)
       : null;
     return {
       ...team,
       board: {
-        left: stats.left,
-        locked: stats.locked,
-        lockedParts: stats.lockedParts,
-        spendable: stats.spendable,
-        squad: stats.squad,
-        count: stats.count,
-        mand: stats.mand,
-        rem: stats.rem,
-        shortfall: stats.shortfall,
+        left: teamStats.left,
+        locked: teamStats.locked,
+        lockedParts: teamStats.lockedParts,
+        spendable: teamStats.spendable,
+        squad: teamStats.squad,
+        count: teamStats.count,
+        mand: teamStats.mand,
+        rem: teamStats.rem,
+        shortfall: teamStats.shortfall,
         limit:
           limit && limit.ok
             ? {
@@ -515,22 +549,23 @@ async function buildFullState() {
     };
   });
 
-  const lotBasePrice = livePlayer ? await basePriceFor(livePlayer) : null;
-  const bids: Bid[] = (auctionState.bids ?? []).map(
-    (bid: { teamId: unknown; amount: number }) => ({
-      teamId: String(bid.teamId),
-      amount: bid.amount,
-    })
-  );
+  const lotBasePrice = livePlayer
+    ? basePriceOf(livePlayer, livePlayer.categoryId)
+    : null;
+  const bids: Bid[] = (state.bids ?? []).map((bid) => ({
+    teamId: bid.teamId,
+    amount: bid.amount,
+  }));
 
   return {
-    auctionState: await decorateStateForBoard(auctionState, ctx),
+    auctionState: {
+      ...decorateStateForBoard(snap, ctx),
+      // The board reads the whole live player off the state, as it did when
+      // Mongoose populated `currentPlayerId`.
+      currentPlayerId: livePlayer,
+    },
     recentSales,
-    pendingPlayers: await PlayerModel.find({ status: { $in: ["PENDING", "UNSOLD"] } })
-      .populate("categoryId")
-      .populate("tagIds")
-      .sort({ createdAt: 1 })
-      .lean(),
+    pendingPlayers,
     teams,
     categories: ctx.categories.map((category) => ({
       _id: category.id,
@@ -545,21 +580,8 @@ async function buildFullState() {
         ? null
         : engineMinNextBid(bids, lotBasePrice, ctx.input.settings),
     lotBasePrice,
-    settings: {
-      timerSeconds: settings.timerSeconds,
-      minSquadSize: settings.minSquadSize,
-      bidIncrement: settings.bidIncrement,
-      captainsCount: settings.captainsCount,
-    },
-    stats: {
-      totalPlayers,
-      sold: soldCount,
-      unsold: unsoldCount,
-      remaining: reauctionable,
-      pending: pendingCount,
-      totalSpent: soldAgg[0]?.totalSpent ?? 0,
-      highestSale: soldAgg[0]?.highestSale ?? 0,
-    },
+    settings: snap.settings,
+    stats,
   };
 }
 
@@ -570,47 +592,39 @@ type BuiltAuctionState = Awaited<ReturnType<typeof buildFullState>>;
  * yet, auto-mark it unsold so the room never stalls. Safe to call from reads
  * and writes; returns null when nothing changed.
  */
-export async function resolveExpiredLot(): Promise<{
+export async function resolveExpiredLot(snap?: AuctionSnapshot): Promise<{
   state: BuiltAuctionState;
   result: ResolveResult;
 } | null> {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
+  const state = snap ? snap.state : await getAuctionState();
 
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
-    return null;
-  }
-  if (!auctionState.timerEnabled || auctionState.timerPaused) {
-    return null;
-  }
-  if (!auctionState.timerEndsAt || auctionState.timerEndsAt.getTime() > Date.now()) {
-    return null;
-  }
+  if (state.status !== "LIVE" || !state.currentPlayerId) return null;
+  if (!state.timerEnabled || state.timerPaused) return null;
+  if (!state.timerEndsAt || state.timerEndsAt.getTime() > Date.now()) return null;
 
-  return markUnsold();
+  return markUnsold(snap);
 }
 
 export async function getFullState(options?: { resolveExpired?: boolean }) {
-  await connectDB();
+  // One snapshot answers both the expiry check and the state build.
+  const snap = await loadSnapshot();
 
   if (options?.resolveExpired !== false) {
-    const resolved = await resolveExpiredLot();
+    const resolved = await resolveExpiredLot(snap);
     if (resolved) return resolved.state;
   }
 
-  return buildFullState();
+  return buildFullState(snap);
 }
 
 export async function startAuction(playerId: string) {
-  await connectDB();
-  await resolveExpiredLot();
-  await getAuctionStateDoc();
+  assertId(playerId, "player id");
 
-  if (!Types.ObjectId.isValid(playerId)) {
-    throw new ServiceError("Invalid player id", 400);
-  }
+  let snap = await loadSnapshot();
+  const expired = await resolveExpiredLot(snap);
+  if (expired) snap = await loadSnapshot();
 
-  const player = await PlayerModel.findById(playerId).populate("categoryId");
+  const player = snap.playersById.get(playerId);
   if (!player) throw new ServiceError("Player not found", 404);
   if (player.status === "SOLD") {
     throw new ServiceError("This player has already been sold");
@@ -619,19 +633,15 @@ export async function startAuction(playerId: string) {
     throw new ServiceError("This player is already live");
   }
 
-  const basePrice = await basePriceFor(player);
+  const basePrice = basePriceFor(player, snap);
   if (basePrice <= 0) {
     throw new ServiceError("Player base price must be greater than zero");
   }
 
   // The board auctions one round at a time.
-  const roundState = await AuctionStateModel.findOne({ singleton: "global" }).lean();
-  const roundCtx = await buildEngineContext(roundState ?? {});
+  const roundCtx = buildEngineContext(snap);
   if (roundCtx.categories.length && roundCtx.input.currentCategoryId) {
-    const playerCategoryId = String(
-      (player.categoryId as unknown as { _id: Types.ObjectId })._id
-    );
-    if (playerCategoryId !== roundCtx.input.currentCategoryId) {
+    if (player.categoryId !== roundCtx.input.currentCategoryId) {
       const round = roundCtx.categories.find(
         (c) => c.id === roundCtx.input.currentCategoryId
       );
@@ -641,128 +651,153 @@ export async function startAuction(playerId: string) {
     }
   }
 
-  const { timerSeconds } = await getSettings();
+  const { timerSeconds } = snap.settings;
 
   // Claim the player first so two starts cannot put different players LIVE.
-  const claimedPlayer = await PlayerModel.findOneAndUpdate(
-    { _id: player._id, status: { $in: ["PENDING", "UNSOLD"] } },
-    { $set: { status: "LIVE" } },
-    { returnDocument: "after" }
-  );
-  if (!claimedPlayer) {
+  const claimed = await claimPlayerStatus(player._id, ["PENDING", "UNSOLD"], {
+    status: "LIVE",
+  });
+  if (!claimed) {
     throw new ServiceError("Player is not available to auction");
   }
 
-  const existing = await AuctionStateModel.findOne({ singleton: "global" }).lean();
-  const timerEnabled = existing?.timerEnabled ?? true;
+  const claimedState = await getDb().runTransaction(async (txn) => {
+    const snapshot = await txn.get(stateRef());
+    if (!snapshot.exists) return null;
 
-  const claimedState = await AuctionStateModel.findOneAndUpdate(
-    { singleton: "global", status: "IDLE" },
-    {
-      $set: {
-        status: "LIVE",
-        currentPlayerId: player._id,
-        timerPaused: false,
-        timerRemainingMs: null,
-        timerEndsAt: timerEnabled
-          ? new Date(Date.now() + timerSeconds * 1000)
-          : null,
-        bids: [],
-        lastResult: null,
-      },
-      $inc: { lotNo: 1 },
-    },
-    { returnDocument: "after" }
-  );
+    const state = AuctionStateStore.hydrate(snapshot);
+    if (state.status !== "IDLE") return null;
+
+    const timerEnabled = state.timerEnabled ?? true;
+    txn.update(stateRef(), {
+      status: "LIVE",
+      currentPlayerId: player._id,
+      timerPaused: false,
+      timerRemainingMs: null,
+      timerEndsAt: timerEnabled ? new Date(Date.now() + timerSeconds * 1000) : null,
+      bids: [],
+      lastResult: null,
+      lotNo: (state.lotNo ?? 0) + 1,
+      updatedAt: new Date(),
+    });
+    return state;
+  });
 
   if (!claimedState) {
-    await PlayerModel.findOneAndUpdate(
-      { _id: player._id, status: "LIVE" },
-      { $set: { status: player.status } }
-    );
+    await Players.updateById(player._id, { status: player.status });
     throw new ServiceError("An auction is already in progress");
   }
 
-  await repairOrphanLivePlayers(player._id);
+  await repairOrphanLivePlayers(snap, player._id);
 
   return getFullState({ resolveExpired: false });
 }
 
-export async function pauseTimer() {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE") throw new ServiceError("No auction is live");
-  if (!auctionState.timerEnabled) throw new ServiceError("Timer is disabled");
-  if (auctionState.timerPaused) return getFullState({ resolveExpired: false });
+/**
+ * Moves a player to a new status only while it still holds one of the statuses
+ * the caller expects — Mongo's conditional claim, as a transaction.
+ */
+async function claimPlayerStatus(
+  playerId: string,
+  expected: PlayerStatus[],
+  patch: Partial<PlayerDoc>
+): Promise<PlayerDoc | null> {
+  const docRef = Players.ref().doc(playerId);
 
-  const remaining = auctionState.timerEndsAt
-    ? auctionState.timerEndsAt.getTime() - Date.now()
+  return getDb().runTransaction(async (txn) => {
+    const snapshot = await txn.get(docRef);
+    if (!snapshot.exists) return null;
+
+    const player = Players.hydrate(snapshot);
+    if (!expected.includes(player.status)) return null;
+
+    txn.update(docRef, { ...patch, updatedAt: new Date() });
+    return { ...player, ...patch } as PlayerDoc;
+  });
+}
+
+export async function pauseTimer() {
+  const state = await getAuctionState();
+  if (state.status !== "LIVE") throw new ServiceError("No auction is live");
+  if (!state.timerEnabled) throw new ServiceError("Timer is disabled");
+  if (state.timerPaused) return getFullState({ resolveExpired: false });
+
+  const remaining = state.timerEndsAt
+    ? state.timerEndsAt.getTime() - Date.now()
     : 0;
-  auctionState.timerRemainingMs = Math.max(remaining, 0);
-  auctionState.timerEndsAt = null;
-  auctionState.timerPaused = true;
-  await auctionState.save();
+
+  await AuctionStateStore.updateById("global", {
+    timerRemainingMs: Math.max(remaining, 0),
+    timerEndsAt: null,
+    timerPaused: true,
+  });
 
   return getFullState({ resolveExpired: false });
 }
 
 export async function resumeTimer() {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE") throw new ServiceError("No auction is live");
-  if (!auctionState.timerPaused) return getFullState({ resolveExpired: false });
+  const state = await getAuctionState();
+  if (state.status !== "LIVE") throw new ServiceError("No auction is live");
+  if (!state.timerPaused) return getFullState({ resolveExpired: false });
 
-  const remaining = auctionState.timerRemainingMs ?? 0;
+  const remaining = state.timerRemainingMs ?? 0;
   if (remaining <= 0) {
-    auctionState.timerPaused = false;
-    auctionState.timerRemainingMs = null;
-    auctionState.timerEndsAt = new Date(Date.now());
-    await auctionState.save();
+    await AuctionStateStore.updateById("global", {
+      timerPaused: false,
+      timerRemainingMs: null,
+      timerEndsAt: new Date(),
+    });
     const resolved = await resolveExpiredLot();
     if (resolved) return resolved.state;
   }
 
-  auctionState.timerEndsAt = new Date(Date.now() + remaining);
-  auctionState.timerRemainingMs = null;
-  auctionState.timerPaused = false;
-  await auctionState.save();
+  await AuctionStateStore.updateById("global", {
+    timerEndsAt: new Date(Date.now() + remaining),
+    timerRemainingMs: null,
+    timerPaused: false,
+  });
 
   return getFullState({ resolveExpired: false });
 }
 
 export async function setTimerEnabled(enabled: boolean) {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
-  auctionState.timerEnabled = enabled;
+  const state = await getAuctionState();
 
   if (!enabled) {
-    auctionState.timerEndsAt = null;
-    auctionState.timerRemainingMs = null;
-    auctionState.timerPaused = false;
-  } else if (auctionState.status === "LIVE" && !auctionState.timerPaused) {
+    await AuctionStateStore.updateById("global", {
+      timerEnabled: false,
+      timerEndsAt: null,
+      timerRemainingMs: null,
+      timerPaused: false,
+    });
+  } else if (state.status === "LIVE" && !state.timerPaused) {
     const { timerSeconds } = await getSettings();
-    auctionState.timerEndsAt = new Date(Date.now() + timerSeconds * 1000);
+    await AuctionStateStore.updateById("global", {
+      timerEnabled: true,
+      timerEndsAt: new Date(Date.now() + timerSeconds * 1000),
+    });
+  } else {
+    await AuctionStateStore.updateById("global", { timerEnabled: true });
   }
 
-  await auctionState.save();
   return getFullState({ resolveExpired: false });
 }
 
 /** Restarts the pacing timer for the current lot — there is no bid to reset anymore. */
 export async function resetTimer() {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
+  const state = await getAuctionState();
+  if (state.status !== "LIVE" || !state.currentPlayerId) {
     throw new ServiceError("No auction is live");
   }
 
   const { timerSeconds } = await getSettings();
-  auctionState.timerPaused = false;
-  auctionState.timerRemainingMs = null;
-  auctionState.timerEndsAt = auctionState.timerEnabled
-    ? new Date(Date.now() + timerSeconds * 1000)
-    : null;
-  await auctionState.save();
+  await AuctionStateStore.updateById("global", {
+    timerPaused: false,
+    timerRemainingMs: null,
+    timerEndsAt: state.timerEnabled
+      ? new Date(Date.now() + timerSeconds * 1000)
+      : null,
+  });
 
   return getFullState({ resolveExpired: false });
 }
@@ -771,44 +806,35 @@ export async function resetTimer() {
  * Admin records the final result of an offline (verbal) auction round —
  * the winning team and the hammer price — and the player is marked sold.
  */
-export async function sellPlayer(teamId: string, price: number) {
-  await connectDB();
-
-  if (!Types.ObjectId.isValid(teamId)) {
-    throw new ServiceError("Invalid team id", 400);
-  }
+export async function sellPlayer(
+  teamId: string,
+  price: number,
+  snapshot?: AuctionSnapshot
+) {
+  assertId(teamId, "team id");
   assertMoney(price, "Sold price");
 
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
+  const snap = snapshot ?? (await loadSnapshot());
+  const state = snap.state;
+  if (state.status !== "LIVE" || !state.currentPlayerId) {
     throw new ServiceError("No player is currently live");
   }
 
-  const player = await PlayerModel.findById(auctionState.currentPlayerId);
+  const player = snap.playersById.get(state.currentPlayerId);
   if (!player) throw new ServiceError("Player not found", 404);
   if (player.status === "SOLD") throw new ServiceError("Player already sold");
 
-  const team = await TeamModel.findById(teamId).lean();
+  const team = snap.teamsById.get(teamId);
   if (!team) throw new ServiceError("Team not found", 404);
 
-  const ctx = await buildEngineContext(auctionState);
-  assertTeamCanAfford(ctx, teamId, String(player.categoryId), price);
+  const ctx = buildEngineContext(snap);
+  assertTeamCanAfford(ctx, teamId, player.categoryId, price);
 
-  const soldPlayer = await PlayerModel.findOneAndUpdate(
-    {
-      _id: player._id,
-      status: { $in: ["LIVE", "PENDING", "UNSOLD"] },
-    },
-    {
-      $set: {
-        status: "SOLD",
-        soldToTeamId: new Types.ObjectId(teamId),
-        soldPrice: price,
-      },
-    },
-    { returnDocument: "after" }
+  const soldPlayer = await claimPlayerStatus(
+    player._id,
+    ["LIVE", "PENDING", "UNSOLD"],
+    { status: "SOLD", soldToTeamId: teamId, soldPrice: price }
   );
-
   if (!soldPlayer) {
     throw new ServiceError("Could not sell player — status changed");
   }
@@ -818,39 +844,37 @@ export async function sellPlayer(teamId: string, price: number) {
     type: "DEBIT",
     amount: -price,
     note: `Purchased ${player.name}`,
-    playerId: String(player._id),
+    playerId: player._id,
   });
 
-  const soldResult: LastResultWrite = {
+  const soldResult: StoredLastResult = {
     playerId: player._id,
     kind: "SOLD",
-    teamId: new Types.ObjectId(teamId),
+    teamId,
     amount: price,
     key: resultKey("SOLD", player._id),
   };
 
   const cleared = await clearLiveAuctionState(player._id, soldResult);
   if (!cleared) {
-    // Player already sold; force idle if still pointing at this player
-    await AuctionStateModel.findOneAndUpdate(
-      { singleton: "global", currentPlayerId: player._id },
-      {
-        $set: {
-          status: "IDLE",
-          currentPlayerId: null,
-          timerEndsAt: null,
-          timerRemainingMs: null,
-          timerPaused: false,
-          bids: [],
-          lastResult: soldResult,
-        },
-      }
-    );
+    // The state moved on under us; force it idle if it still shows this lot.
+    const current = await getAuctionState();
+    if (current.currentPlayerId === player._id) {
+      await AuctionStateStore.updateById("global", {
+        status: "IDLE",
+        currentPlayerId: null,
+        timerEndsAt: null,
+        timerRemainingMs: null,
+        timerPaused: false,
+        bids: [],
+        lastResult: soldResult,
+      });
+    }
   }
 
-  const state = await getFullState({ resolveExpired: false });
+  const fullState = await getFullState({ resolveExpired: false });
   return {
-    state,
+    state: fullState,
     result: {
       status: "SOLD" as const,
       playerName: player.name,
@@ -861,23 +885,22 @@ export async function sellPlayer(teamId: string, price: number) {
   };
 }
 
-export async function markUnsold() {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
+export async function markUnsold(snapshot?: AuctionSnapshot) {
+  const snap = snapshot ?? (await loadSnapshot());
+  const state = snap.state;
+  if (state.status !== "LIVE" || !state.currentPlayerId) {
     throw new ServiceError("No player is currently live");
   }
 
-  const player = await PlayerModel.findById(auctionState.currentPlayerId);
+  const player = snap.playersById.get(state.currentPlayerId);
   if (!player) throw new ServiceError("Player not found", 404);
 
-  const updatedPlayer = await PlayerModel.findOneAndUpdate(
-    { _id: player._id, status: { $ne: "SOLD" } },
-    { $set: { status: "UNSOLD", soldToTeamId: null, soldPrice: null } },
-    { returnDocument: "after" }
+  const updated = await claimPlayerStatus(
+    player._id,
+    ["LIVE", "PENDING", "UNSOLD"],
+    { status: "UNSOLD", soldToTeamId: null, soldPrice: null }
   );
-
-  if (!updatedPlayer) {
+  if (!updated) {
     throw new ServiceError("Could not mark player unsold");
   }
 
@@ -889,46 +912,38 @@ export async function markUnsold() {
     key: resultKey("UNSOLD", player._id),
   });
 
-  const state = await getFullState({ resolveExpired: false });
+  const fullState = await getFullState({ resolveExpired: false });
   return {
-    state,
+    state: fullState,
     result: { status: "UNSOLD" as const, playerName: player.name },
   };
 }
 
 /** Turns the display board's final-squads showcase on or off. */
 export async function setShowcase(enabled: boolean) {
-  await connectDB();
-  await AuctionStateModel.findOneAndUpdate(
-    { singleton: "global" },
-    { $set: { showcase: enabled } },
-    { upsert: true }
-  );
+  await getAuctionState();
+  await AuctionStateStore.updateById("global", { showcase: enabled });
   return buildFullState();
 }
 
 // ---------------------------------------------------------------- the board
 
 /** The standing bid on the current lot, or null when nobody has bid. */
-function standingBid(auctionState: {
-  bids?: { teamId: unknown; amount: number }[];
-}): { teamId: string; amount: number } | null {
-  const bids = auctionState.bids ?? [];
+function standingBid(bids: StoredBid[]): { teamId: string; amount: number } | null {
   if (!bids.length) return null;
   const last = bids[bids.length - 1];
-  return { teamId: String(last.teamId), amount: last.amount };
+  return { teamId: last.teamId, amount: last.amount };
 }
 
-async function requireLiveLot() {
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
+async function requireLiveLot(snapshot?: AuctionSnapshot) {
+  const snap = snapshot ?? (await loadSnapshot());
+  const state = snap.state;
+  if (state.status !== "LIVE" || !state.currentPlayerId) {
     throw new ServiceError("No player is currently live");
   }
-  const player = await PlayerModel.findById(auctionState.currentPlayerId).populate(
-    "categoryId"
-  );
+  const player = snap.playersById.get(state.currentPlayerId);
   if (!player) throw new ServiceError("Player not found", 404);
-  return { auctionState, player };
+  return { snap, state, player };
 }
 
 /**
@@ -937,32 +952,21 @@ async function requireLiveLot() {
  * stays the authority.
  */
 export async function placeBid(teamId: string, amount: number) {
-  await connectDB();
-  if (!Types.ObjectId.isValid(teamId)) {
-    throw new ServiceError("Invalid team id", 400);
-  }
+  assertId(teamId, "team id");
   assertMoney(amount, "Bid amount");
 
-  const { auctionState, player } = await requireLiveLot();
-  const ctx = await buildEngineContext(auctionState);
-  const bids: Bid[] = (auctionState.bids ?? []).map(
-    (bid: { teamId: unknown; amount: number }) => ({
-      teamId: String(bid.teamId),
-      amount: bid.amount,
-    })
-  );
+  const { snap, state, player } = await requireLiveLot();
+  const ctx = buildEngineContext(snap);
+  const bids: Bid[] = (state.bids ?? []).map((bid) => ({
+    teamId: bid.teamId,
+    amount: bid.amount,
+  }));
 
-  const basePrice = await basePriceFor(player);
+  const basePrice = basePriceFor(player, snap);
   const verdict = checkBid(
     ctx.input,
     bids,
-    {
-      playerId: String(player._id),
-      categoryId: String(
-        (player.categoryId as unknown as { _id: Types.ObjectId })._id
-      ),
-      basePrice,
-    },
+    { playerId: player._id, categoryId: player.categoryId, basePrice },
     teamId,
     amount,
     ctx.stats
@@ -970,17 +974,23 @@ export async function placeBid(teamId: string, amount: number) {
   if (!verdict.ok) throw new ServiceError(verdict.message);
 
   // Guard against two bids landing at once: the ledger must not have grown.
-  const updated = await AuctionStateModel.findOneAndUpdate(
-    {
-      singleton: "global",
-      status: "LIVE",
-      currentPlayerId: player._id,
-      [`bids.${bids.length}`]: { $exists: false },
-    },
-    { $push: { bids: { teamId: new Types.ObjectId(teamId), amount, at: new Date() } } },
-    { returnDocument: "after" }
-  );
-  if (!updated) {
+  const appended = await getDb().runTransaction(async (txn) => {
+    const snapshot = await txn.get(stateRef());
+    if (!snapshot.exists) return false;
+
+    const current = AuctionStateStore.hydrate(snapshot);
+    if (current.status !== "LIVE") return false;
+    if (current.currentPlayerId !== player._id) return false;
+    if ((current.bids ?? []).length !== bids.length) return false;
+
+    txn.update(stateRef(), {
+      bids: [...(current.bids ?? []), { teamId, amount, at: new Date() }],
+      updatedAt: new Date(),
+    });
+    return true;
+  });
+
+  if (!appended) {
     throw new ServiceError("Another bid landed first — check the board and try again");
   }
 
@@ -989,19 +999,28 @@ export async function placeBid(teamId: string, amount: number) {
 
 /** Takes back the most recent bid. */
 export async function undoLastBid() {
-  await connectDB();
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
+  const state = await getAuctionState();
+  if (state.status !== "LIVE" || !state.currentPlayerId) {
     throw new ServiceError("No player is currently live");
   }
-  if (!(auctionState.bids ?? []).length) {
+  if (!(state.bids ?? []).length) {
     throw new ServiceError("There is no bid to undo");
   }
 
-  await AuctionStateModel.findOneAndUpdate(
-    { singleton: "global", status: "LIVE", currentPlayerId: auctionState.currentPlayerId },
-    { $pop: { bids: 1 } }
-  );
+  await getDb().runTransaction(async (txn) => {
+    const snapshot = await txn.get(stateRef());
+    if (!snapshot.exists) return;
+
+    const current = AuctionStateStore.hydrate(snapshot);
+    if (current.status !== "LIVE") return;
+    if (current.currentPlayerId !== state.currentPlayerId) return;
+    if (!(current.bids ?? []).length) return;
+
+    txn.update(stateRef(), {
+      bids: current.bids.slice(0, -1),
+      updatedAt: new Date(),
+    });
+  });
 
   return getFullState({ resolveExpired: false });
 }
@@ -1011,13 +1030,12 @@ export async function undoLastBid() {
  * again at the hammer, because other sales may have moved the team's purse.
  */
 export async function sellToLeadingBid() {
-  await connectDB();
-  const { auctionState } = await requireLiveLot();
-  const leading = standingBid(auctionState);
+  const { snap, state } = await requireLiveLot();
+  const leading = standingBid(state.bids ?? []);
   if (!leading) {
     throw new ServiceError("No bids yet. Wait for a bid or mark the player unsold.");
   }
-  return sellPlayer(leading.teamId, leading.amount);
+  return sellPlayer(leading.teamId, leading.amount, snap);
 }
 
 /**
@@ -1025,45 +1043,40 @@ export async function sellToLeadingBid() {
  * money every team had locked for it.
  */
 export async function setRound(categoryId: string) {
-  await connectDB();
-  if (!Types.ObjectId.isValid(categoryId)) {
-    throw new ServiceError("Invalid category id", 400);
-  }
+  assertId(categoryId, "category id");
 
-  const auctionState = await getAuctionStateDoc();
-  if (auctionState.status === "LIVE") {
+  const state = await getAuctionState();
+  if (state.status === "LIVE") {
     throw new ServiceError(
       "Sell the current player or mark them unsold before switching rounds"
     );
   }
 
-  const category = await PlayerCategoryModel.findById(categoryId).lean();
+  const category = await PlayerCategories.findById(categoryId);
   if (!category) throw new ServiceError("Category not found", 404);
 
-  await AuctionStateModel.findOneAndUpdate(
-    { singleton: "global" },
-    {
-      $addToSet: { openCategoryIds: category._id },
-      $set: { currentCategoryId: category._id, lastResult: null },
-    },
-    { upsert: true }
-  );
+  const openCategoryIds = state.openCategoryIds.includes(category._id)
+    ? state.openCategoryIds
+    : [...state.openCategoryIds, category._id];
+
+  await AuctionStateStore.updateById("global", {
+    openCategoryIds,
+    currentCategoryId: category._id,
+    lastResult: null,
+  });
 
   return getFullState({ resolveExpired: false });
 }
 
 /** Puts an unsold player back into the waiting pool. */
 export async function requeuePlayer(playerId: string) {
-  await connectDB();
-  if (!Types.ObjectId.isValid(playerId)) {
-    throw new ServiceError("Invalid player id", 400);
-  }
+  assertId(playerId, "player id");
 
-  const updated = await PlayerModel.findOneAndUpdate(
-    { _id: playerId, status: "UNSOLD" },
-    { $set: { status: "PENDING", soldToTeamId: null, soldPrice: null } },
-    { returnDocument: "after" }
-  );
+  const updated = await claimPlayerStatus(playerId, ["UNSOLD"], {
+    status: "PENDING",
+    soldToTeamId: null,
+    soldPrice: null,
+  });
   if (!updated) {
     throw new ServiceError("That player is not in the unsold list");
   }

@@ -1,5 +1,4 @@
 import { auth } from "@/auth";
-import { connectDB } from "@/lib/db";
 import { getUserTeam, getUserTeamId } from "@/lib/session-team";
 import { getTeamLedger, getLedgerSummary } from "@/lib/services/wallet-ledger";
 import { StatCard } from "@/components/stat-card";
@@ -23,7 +22,6 @@ const TYPE_BADGE: Record<string, string> = {
 
 export default async function TeamWalletPage() {
   const session = await auth();
-  await connectDB();
 
   const team = await getUserTeam(session?.user?.id);
   const teamId = await getUserTeamId(session?.user?.id);
@@ -80,7 +78,7 @@ export default async function TeamWalletPage() {
               </TableHeader>
               <TableBody>
                 {ledger.map((txn) => (
-                  <TableRow key={String(txn._id)}>
+                  <TableRow key={txn._id}>
                     <TableCell className="font-medium">{txn.note}</TableCell>
                     <TableCell>
                       <Badge className={TYPE_BADGE[txn.type]}>{txn.type}</Badge>

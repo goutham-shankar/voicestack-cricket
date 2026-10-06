@@ -1,48 +1,35 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import mongoose from "mongoose";
-import PlayerModel from "../src/models/Player";
-import TeamModel from "../src/models/Team";
-import AuctionStateModel from "../src/models/AuctionState";
-import UserModel from "../src/models/User";
+import { getSingleton } from "../src/lib/firestore";
+import { Players } from "../src/models/Player";
+import { Teams } from "../src/models/Team";
+import { Users } from "../src/models/User";
+import { AuctionStateStore } from "../src/models/AuctionState";
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("Missing MONGODB_URI");
-
-  await mongoose.connect(uri);
-
-  const [players, teams, users] = await Promise.all([
-    PlayerModel.deleteMany({}),
-    TeamModel.deleteMany({}),
-    UserModel.updateMany(
-      { teamId: { $ne: null } },
-      { $set: { teamId: null } }
-    ),
+  const [players, teams] = await Promise.all([
+    Players.deleteMany(),
+    Teams.deleteMany(),
   ]);
 
-  await AuctionStateModel.findOneAndUpdate(
-    { singleton: "global" },
-    {
-      $set: {
-        status: "IDLE",
-        currentPlayerId: null,
-        timerEndsAt: null,
-        timerRemainingMs: null,
-        timerPaused: false,
-      },
-    },
-    { upsert: true }
-  );
+  const linked = await Users.find({ teamId: { $ne: null } });
+  await Promise.all(linked.map((user) => Users.updateById(user._id, { teamId: null })));
+
+  await getSingleton(AuctionStateStore);
+  await AuctionStateStore.updateById("global", {
+    status: "IDLE",
+    currentPlayerId: null,
+    timerEndsAt: null,
+    timerRemainingMs: null,
+    timerPaused: false,
+  });
 
   console.log("Cleanup complete:");
-  console.log(`  players deleted: ${players.deletedCount}`);
-  console.log(`  teams deleted:   ${teams.deletedCount}`);
-  console.log(`  users unlinked:  ${users.modifiedCount}`);
+  console.log(`  players deleted: ${players}`);
+  console.log(`  teams deleted:   ${teams}`);
+  console.log(`  users unlinked:  ${linked.length}`);
   console.log("  auction state:   IDLE (reset)");
-
-  await mongoose.disconnect();
 }
 
 main().catch((err) => {

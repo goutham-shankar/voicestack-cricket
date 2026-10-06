@@ -1,17 +1,25 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/firestore";
 
-const teamSchema = new Schema(
-  {
-    name: { type: String, required: true, trim: true, unique: true },
-    logoUrl: { type: String, default: null },
-    initialBudget: { type: Number, required: true, default: 100000 },
-    maxSquadSize: { type: Number, required: true, default: 12 },
-    captainMale: { type: String, default: "", trim: true },
-    captainFemale: { type: String, default: "", trim: true },
-  },
-  { timestamps: true }
-);
+export type Team = {
+  name: string;
+  logoUrl: string | null;
+  initialBudget: number;
+  maxSquadSize: number;
+  captainMale: string;
+  captainFemale: string;
+};
 
-export type Team = InferSchemaType<typeof teamSchema>;
+export type TeamDoc = Doc<Team>;
 
-export default models.Team || model("Team", teamSchema);
+export const Teams = collection<Team>({
+  name: "teams",
+  unique: ["name"],
+  defaults: () => ({
+    name: "",
+    logoUrl: null,
+    initialBudget: 100000,
+    maxSquadSize: 12,
+    captainMale: "",
+    captainFemale: "",
+  }),
+});

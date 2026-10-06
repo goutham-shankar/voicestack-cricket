@@ -9,7 +9,7 @@ export default async function AuctioneerLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  const team = await getUserTeam(session?.user?.id, "name");
+  const team = await getUserTeam(session?.user?.id);
 
   return (
     <div className="flex min-h-svh w-full flex-col">

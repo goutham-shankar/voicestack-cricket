@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
+import { FieldValue } from "firebase-admin/firestore";
 import { requireAdmin } from "@/lib/api-auth";
 import { tagSchema } from "@/lib/validators/tag";
-import { isDuplicateKeyError } from "@/lib/mongo-errors";
-import PlayerTagModel from "@/models/PlayerTag";
-import PlayerModel from "@/models/Player";
+import { isDuplicateKeyError } from "@/lib/db-errors";
+import { PlayerTags } from "@/models/PlayerTag";
+import { Players } from "@/models/Player";
 
 export async function PATCH(
   req: NextRequest,
@@ -20,9 +20,8 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  await connectDB();
   try {
-    const tag = await PlayerTagModel.findByIdAndUpdate(id, parsed.data, { returnDocument: "after" });
+    const tag = await PlayerTags.updateById(id, parsed.data);
     if (!tag) return NextResponse.json({ error: "Tag not found" }, { status: 404 });
     return NextResponse.json(tag);
   } catch (err: unknown) {
@@ -44,11 +43,14 @@ export async function DELETE(
   if (unauthorized) return unauthorized;
 
   const { id } = await params;
-  await connectDB();
 
-  await PlayerModel.updateMany({ tagIds: id }, { $pull: { tagIds: id } });
+  // Drop the tag from every player carrying it before removing the tag itself.
+  await Players.updateMany(
+    { tagIds: { $contains: id } },
+    { tagIds: FieldValue.arrayRemove(id) }
+  );
 
-  const deleted = await PlayerTagModel.findByIdAndDelete(id);
+  const deleted = await PlayerTags.deleteById(id);
   if (!deleted) return NextResponse.json({ error: "Tag not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

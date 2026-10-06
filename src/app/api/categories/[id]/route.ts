@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-auth";
 import { categorySchema } from "@/lib/validators/category";
-import { isDuplicateKeyError } from "@/lib/mongo-errors";
-import PlayerCategoryModel from "@/models/PlayerCategory";
-import PlayerModel from "@/models/Player";
+import { isDuplicateKeyError } from "@/lib/db-errors";
+import { PlayerCategories } from "@/models/PlayerCategory";
+import { Players } from "@/models/Player";
 
 export async function PATCH(
   req: NextRequest,
@@ -20,11 +19,8 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  await connectDB();
   try {
-    const category = await PlayerCategoryModel.findByIdAndUpdate(id, parsed.data, {
-      returnDocument: "after",
-    });
+    const category = await PlayerCategories.updateById(id, parsed.data);
     if (!category) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
@@ -48,9 +44,8 @@ export async function DELETE(
   if (unauthorized) return unauthorized;
 
   const { id } = await params;
-  await connectDB();
 
-  const inUse = await PlayerModel.exists({ categoryId: id });
+  const inUse = await Players.exists({ categoryId: id });
   if (inUse) {
     return NextResponse.json(
       { error: "Category is assigned to one or more players" },
@@ -58,7 +53,7 @@ export async function DELETE(
     );
   }
 
-  const deleted = await PlayerCategoryModel.findByIdAndDelete(id);
+  const deleted = await PlayerCategories.deleteById(id);
   if (!deleted) {
     return NextResponse.json({ error: "Category not found" }, { status: 404 });
   }

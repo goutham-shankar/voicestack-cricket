@@ -1,23 +1,29 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/firestore";
 
 export const WALLET_TRANSACTION_TYPES = ["CREDIT", "DEBIT", "ADJUSTMENT"] as const;
 
-const walletTransactionSchema = new Schema(
-  {
-    teamId: { type: Schema.Types.ObjectId, ref: "Team", required: true },
-    type: { type: String, enum: WALLET_TRANSACTION_TYPES, required: true },
-    // Signed: CREDIT/ADJUSTMENT-up are positive, DEBIT/ADJUSTMENT-down are negative.
-    amount: { type: Number, required: true },
-    balanceAfter: { type: Number, required: true },
-    playerId: { type: Schema.Types.ObjectId, ref: "Player", default: null },
-    note: { type: String, required: true, trim: true },
-  },
-  { timestamps: true }
-);
+export type WalletTransactionType = (typeof WALLET_TRANSACTION_TYPES)[number];
 
-walletTransactionSchema.index({ teamId: 1, createdAt: 1 });
+export type WalletTransaction = {
+  teamId: string;
+  type: WalletTransactionType;
+  /** Signed: CREDIT/ADJUSTMENT-up are positive, DEBIT/ADJUSTMENT-down negative. */
+  amount: number;
+  balanceAfter: number;
+  playerId: string | null;
+  note: string;
+};
 
-export type WalletTransaction = InferSchemaType<typeof walletTransactionSchema>;
+export type WalletTransactionDoc = Doc<WalletTransaction>;
 
-export default models.WalletTransaction ||
-  model("WalletTransaction", walletTransactionSchema);
+export const WalletTransactions = collection<WalletTransaction>({
+  name: "walletTransactions",
+  defaults: () => ({
+    teamId: "",
+    type: "DEBIT",
+    amount: 0,
+    balanceAfter: 0,
+    playerId: null,
+    note: "",
+  }),
+});

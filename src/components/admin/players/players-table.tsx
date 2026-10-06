@@ -60,7 +60,9 @@ export function PlayersTable({
       if (roleFilter !== ALL && p.role !== roleFilter) return false;
       if (categoryFilter !== ALL) {
         const categoryId =
-          typeof p.categoryId === "object" ? p.categoryId._id : p.categoryId;
+          typeof p.categoryId === "object" && p.categoryId
+            ? p.categoryId._id
+            : p.categoryId;
         if (categoryId !== categoryFilter) return false;
       }
       return true;

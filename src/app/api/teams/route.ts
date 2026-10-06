@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { connectDB } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/api-auth";
 import { teamSchema } from "@/lib/validators/team";
-import { isDuplicateKeyError } from "@/lib/mongo-errors";
-import TeamModel from "@/models/Team";
-import UserModel from "@/models/User";
+import { isDuplicateKeyError } from "@/lib/db-errors";
+import { Teams } from "@/models/Team";
+import { Users } from "@/models/User";
 import { recordTransaction } from "@/lib/services/wallet-ledger";
 
 export async function GET() {
   const { response: unauthorized } = await requireAuth();
   if (unauthorized) return unauthorized;
 
-  await connectDB();
-  const teams = await TeamModel.find().sort({ name: 1 }).lean();
+  const teams = await Teams.find(undefined, { sort: { name: 1 } });
   return NextResponse.json(teams);
 }
 
@@ -36,28 +34,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  await connectDB();
   try {
-    const team = await TeamModel.create(teamData);
+    const team = await Teams.create(teamData);
 
     await recordTransaction({
-      teamId: String(team._id),
+      teamId: team._id,
       type: "CREDIT",
       amount: team.initialBudget,
       note: "Starting balance",
     });
 
     if (loginEmail && loginPassword) {
-      const existingUser = await UserModel.findOne({ email: loginEmail });
+      const existingUser = await Users.findOne({ email: loginEmail });
       if (existingUser) {
-        await TeamModel.findByIdAndDelete(team._id);
+        await Teams.deleteById(team._id);
         return NextResponse.json(
           { error: { fieldErrors: { loginEmail: ["Email is already in use"] } } },
           { status: 409 }
         );
       }
       const passwordHash = await bcrypt.hash(loginPassword, 10);
-      await UserModel.create({
+      await Users.create({
         email: loginEmail,
         passwordHash,
         role: "team",

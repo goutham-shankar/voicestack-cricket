@@ -1,7 +1,6 @@
-import { connectDB } from "@/lib/db";
-import PlayerModel from "@/models/Player";
-import PlayerCategoryModel from "@/models/PlayerCategory";
-import PlayerTagModel from "@/models/PlayerTag";
+import { Players } from "@/models/Player";
+import { getCategories, getTags } from "@/lib/services/catalog";
+import { populatePlayers } from "@/lib/services/populate";
 import { PlayersTable } from "@/components/admin/players/players-table";
 
 function serialize<T>(data: T): T {
@@ -9,12 +8,10 @@ function serialize<T>(data: T): T {
 }
 
 export default async function AdminPlayersPage() {
-  await connectDB();
-
   const [players, categories, tags] = await Promise.all([
-    PlayerModel.find().populate("categoryId").populate("tagIds").sort({ createdAt: -1 }).lean(),
-    PlayerCategoryModel.find().sort({ order: 1, name: 1 }).lean(),
-    PlayerTagModel.find().sort({ name: 1 }).lean(),
+    Players.find(undefined, { sort: { order: 1, createdAt: 1 } }).then(populatePlayers),
+    getCategories(),
+    getTags(),
   ]);
 
   return (

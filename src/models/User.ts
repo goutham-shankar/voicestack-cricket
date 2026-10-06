@@ -1,17 +1,26 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
-import { USER_ROLES } from "@/lib/constants";
+import { collection, type Doc } from "@/lib/firestore";
+import type { USER_ROLES } from "@/lib/constants";
 
-const userSchema = new Schema(
-  {
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
-    role: { type: String, enum: USER_ROLES, required: true },
-    name: { type: String, required: true },
-    teamId: { type: Schema.Types.ObjectId, ref: "Team", default: null },
-  },
-  { timestamps: true }
-);
+export type UserRole = (typeof USER_ROLES)[number];
 
-export type User = InferSchemaType<typeof userSchema>;
+export type User = {
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  name: string;
+  teamId: string | null;
+};
 
-export default models.User || model("User", userSchema);
+export type UserDoc = Doc<User>;
+
+export const Users = collection<User>({
+  name: "users",
+  unique: ["email"],
+  defaults: () => ({
+    email: "",
+    passwordHash: "",
+    role: "team",
+    name: "",
+    teamId: null,
+  }),
+});

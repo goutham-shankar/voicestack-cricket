@@ -1,22 +1,28 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/firestore";
 
-const auctionSettingsSchema = new Schema(
-  {
-    singleton: { type: String, required: true, unique: true, default: "global" },
-    defaultWalletBudget: { type: Number, required: true, default: 100000 },
-    defaultMaxSquadSize: { type: Number, required: true, default: 12 },
-    timerSeconds: { type: Number, required: true, default: 30 },
-    /** Smallest squad every team must end up with, captains included when they count. */
-    minSquadSize: { type: Number, required: true, default: 12 },
-    /** How much each bid must rise by. */
-    bidIncrement: { type: Number, required: true, default: 500 },
-    /** Whether the two captains occupy mandatory squad slots. */
-    captainsCount: { type: Boolean, required: true, default: true },
-  },
-  { timestamps: true }
-);
+export type AuctionSettings = {
+  defaultWalletBudget: number;
+  defaultMaxSquadSize: number;
+  timerSeconds: number;
+  /** Smallest squad every team must end up with, captains included when they count. */
+  minSquadSize: number;
+  /** How much each bid must rise by. */
+  bidIncrement: number;
+  /** Whether the two captains occupy mandatory squad slots. */
+  captainsCount: boolean;
+};
 
-export type AuctionSettings = InferSchemaType<typeof auctionSettingsSchema>;
+export type AuctionSettingsDoc = Doc<AuctionSettings>;
 
-export default models.AuctionSettings ||
-  model("AuctionSettings", auctionSettingsSchema);
+/** A single document, `auctionSettings/global` — read via `getSingleton`. */
+export const AuctionSettingsStore = collection<AuctionSettings>({
+  name: "auctionSettings",
+  defaults: () => ({
+    defaultWalletBudget: 100000,
+    defaultMaxSquadSize: 12,
+    timerSeconds: 30,
+    minSquadSize: 12,
+    bidIncrement: 500,
+    captainsCount: true,
+  }),
+});
