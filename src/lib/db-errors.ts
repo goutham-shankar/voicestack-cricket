@@ -1,7 +1,7 @@
 /**
- * Firestore has no unique indexes, so `collection()` enforces them itself and
- * raises this when one is violated. Routes map it to a 409 exactly as they did
- * MongoDB's E11000.
+ * A unique-index violation, normalised. `collection()` raises this in place of
+ * MongoDB's raw E11000 so routes can map it to a 409 without reaching for a
+ * driver error code.
  */
 export class DuplicateKeyError extends Error {
   field: string;

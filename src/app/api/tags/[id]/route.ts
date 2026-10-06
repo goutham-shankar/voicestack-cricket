@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
 import { requireAdmin } from "@/lib/api-auth";
 import { tagSchema } from "@/lib/validators/tag";
 import { isDuplicateKeyError } from "@/lib/db-errors";
@@ -47,7 +46,7 @@ export async function DELETE(
   // Drop the tag from every player carrying it before removing the tag itself.
   await Players.updateMany(
     { tagIds: { $contains: id } },
-    { tagIds: FieldValue.arrayRemove(id) }
+    { $pull: { tagIds: id } }
   );
 
   const deleted = await PlayerTags.deleteById(id);

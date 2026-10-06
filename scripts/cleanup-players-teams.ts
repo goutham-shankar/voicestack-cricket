@@ -1,7 +1,8 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { getSingleton } from "../src/lib/firestore";
+import { closeDb } from "../src/lib/mongo";
+import { getSingleton } from "../src/lib/db";
 import { Players } from "../src/models/Player";
 import { Teams } from "../src/models/Team";
 import { Users } from "../src/models/User";
@@ -29,7 +30,9 @@ async function main() {
   console.log("  auction state:   IDLE (reset)");
 }
 
-main().catch((err) => {
+main()
+  .catch((err) => {
   console.error(err);
   process.exit(1);
-});
+  })
+  .finally(() => closeDb());

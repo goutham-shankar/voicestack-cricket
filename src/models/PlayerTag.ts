@@ -1,4 +1,4 @@
-import { collection, type Doc } from "@/lib/firestore";
+import { collection, type Doc } from "@/lib/db";
 
 export type PlayerTag = {
   name: string;

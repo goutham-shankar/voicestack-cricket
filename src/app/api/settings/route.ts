@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireAuth } from "@/lib/api-auth";
 import { settingsSchema } from "@/lib/validators/settings";
-import { getSingleton } from "@/lib/firestore";
+import { getSingleton } from "@/lib/db";
 import { AuctionSettingsStore } from "@/models/AuctionSettings";
 
 export async function GET() {

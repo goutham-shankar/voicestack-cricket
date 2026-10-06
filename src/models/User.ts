@@ -1,4 +1,4 @@
-import { collection, type Doc } from "@/lib/firestore";
+import { collection, type Doc } from "@/lib/db";
 import type { USER_ROLES } from "@/lib/constants";
 
 export type UserRole = (typeof USER_ROLES)[number];

@@ -1,23 +1,23 @@
-import { Timestamp } from "firebase-admin/firestore";
-import { getDb } from "@/lib/firebase";
+import { isDuplicateKeyError } from "@/lib/db-errors";
 import { WalletTransactions, type WalletTransactionType } from "@/models/WalletTransaction";
 
-/** Ledger order: by write time, with the document id breaking exact ties. */
-function byEntryOrder(
-  a: { createdAt: Date; _id: string },
-  b: { createdAt: Date; _id: string }
-) {
-  const byTime = a.createdAt.getTime() - b.createdAt.getTime();
-  return byTime !== 0 ? byTime : a._id.localeCompare(b._id);
+/** Ledger order: by position, which is assigned on append and never reused. */
+function byEntryOrder(a: { seq: number }, b: { seq: number }) {
+  return a.seq - b.seq;
 }
+
+const MAX_APPEND_ATTEMPTS = 5;
 
 /**
  * Appends one immutable ledger entry for a team and returns it.
  * `amount` is signed: positive credits the wallet, negative debits it.
  *
- * The running balance is read and the entry appended inside one Firestore
- * transaction, so two concurrent purchases cannot both derive `balanceAfter`
- * from the same previous entry.
+ * The running balance is derived from the entry before it, so two concurrent
+ * purchases must not both build on the same predecessor. Rather than hold a
+ * transaction open across the read and the write — which would oblige every
+ * deployment to run a replica set — the entry claims the next position in the
+ * team's ledger, and the unique index on (teamId, seq) rejects the loser of a
+ * race. It then retries, reading the balance the winner actually wrote.
  */
 export async function recordTransaction({
   teamId,
@@ -32,34 +32,30 @@ export async function recordTransaction({
   note: string;
   playerId?: string | null;
 }) {
-  const docRef = WalletTransactions.ref().doc();
+  for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
+    const entries = await WalletTransactions.find({ teamId });
+    const last = entries.sort(byEntryOrder).at(-1);
 
-  return getDb().runTransaction(async (txn) => {
-    const existing = await txn.get(
-      WalletTransactions.ref().where("teamId", "==", teamId)
-    );
-    const entries = existing.docs
-      .map((doc) => WalletTransactions.hydrate(doc))
-      .sort(byEntryOrder);
+    try {
+      return await WalletTransactions.create({
+        teamId,
+        type,
+        amount,
+        balanceAfter: (last?.balanceAfter ?? 0) + amount,
+        playerId: playerId ?? null,
+        note,
+        seq: (last?.seq ?? 0) + 1,
+      });
+    } catch (error) {
+      // Another entry took this position; re-read and build on it instead.
+      if (isDuplicateKeyError(error) && attempt < MAX_APPEND_ATTEMPTS) continue;
+      throw error;
+    }
+  }
 
-    const previousBalance = entries.at(-1)?.balanceAfter ?? 0;
-    const balanceAfter = previousBalance + amount;
-    const now = Timestamp.now();
-
-    const payload = {
-      teamId,
-      type,
-      amount,
-      balanceAfter,
-      playerId: playerId ?? null,
-      note,
-      createdAt: now,
-      updatedAt: now,
-    };
-    txn.create(docRef, payload);
-
-    return { ...payload, _id: docRef.id, createdAt: now.toDate(), updatedAt: now.toDate() };
-  });
+  throw new Error(
+    `Could not append to ${teamId}'s ledger after ${MAX_APPEND_ATTEMPTS} attempts`
+  );
 }
 
 /** Bulk version of getLedgerSummary: one read, grouped by team. */

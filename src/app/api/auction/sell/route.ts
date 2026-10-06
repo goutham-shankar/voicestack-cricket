@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
       teamId && price != null
         ? await sellPlayer(teamId, price)
         : await sellToLeadingBid();
-    broadcastAuction("auction:sold", result);
-    broadcastAuction("auction:state", state);
+    await broadcastAuction("auction:sold", result);
+    await broadcastAuction("auction:state", state);
     return NextResponse.json(state);
   } catch (err) {
     return handleServiceError(err);

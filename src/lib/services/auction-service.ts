@@ -1,5 +1,4 @@
-import { getDb } from "@/lib/firebase";
-import { getSingleton, onFirestoreWrite } from "@/lib/firestore";
+import { getSingleton, onDbWrite } from "@/lib/db";
 import { ServiceError } from "@/lib/services/service-error";
 import {
   AuctionStateStore,
@@ -27,6 +26,7 @@ import {
   type EnginePlayer,
   type EngineTeam,
   type TeamStats,
+  type BidIncrementTier,
 } from "@/lib/auction-engine";
 import {
   getAllLedgerSummaries,
@@ -37,18 +37,19 @@ import {
 type RuntimeSettings = {
   minSquadSize: number;
   bidIncrement: number;
+  bidIncrementTiers?: BidIncrementTier[];
   captainsCount: boolean;
 };
 
 /**
  * Everything the board is derived from, read once per request.
  *
- * Firestore has no joins and no multi-collection read, so the only way to keep
- * a board render cheap is to fetch each collection exactly once and compute
- * from memory. Before this existed the state build re-read the whole player
- * catalogue four times and the ledger twice; over a WAN each of those is a
- * round trip, and a single bid cost seconds. These seven reads are issued
- * together, so the whole snapshot costs about one round trip of latency.
+ * The board draws on every collection at once, so the way to keep a render
+ * cheap is to fetch each exactly once and compute the rest in memory. Before
+ * this existed the state build re-read the whole player catalogue four times
+ * and the ledger twice; over a WAN each of those is a round trip, and a single
+ * bid cost seconds. These seven queries are issued together, so the whole
+ * snapshot costs about one round trip of latency.
  */
 export type AuctionSnapshot = {
   state: AuctionStateDoc;
@@ -89,7 +90,7 @@ export function invalidateSnapshot() {
 
 // Covers writes made anywhere in the app, not just through this service —
 // an admin editing a player must show up on the board immediately.
-onFirestoreWrite(invalidateSnapshot);
+onDbWrite(invalidateSnapshot);
 
 export async function loadSnapshot(): Promise<AuctionSnapshot> {
   if (cachedSnapshot && Date.now() - cachedSnapshot.at < SNAPSHOT_TTL_MS) {
@@ -125,7 +126,8 @@ async function readSnapshot(): Promise<AuctionSnapshot> {
     state,
     settings: {
       minSquadSize: settingsDoc.minSquadSize ?? 12,
-      bidIncrement: settingsDoc.bidIncrement ?? 500,
+      bidIncrement: settingsDoc.bidIncrement ?? 20 * 100_000,
+      bidIncrementTiers: settingsDoc.bidIncrementTiers,
       captainsCount: settingsDoc.captainsCount ?? true,
     },
     categories,
@@ -145,7 +147,8 @@ function getAuctionState() {
   return getSingleton(AuctionStateStore);
 }
 
-const stateRef = () => AuctionStateStore.ref().doc("global");
+/** The auction state is a singleton row, keyed by this literal id. */
+const STATE_ID = "global";
 
 /** A price is money: at most two decimal places, and above zero. */
 function assertMoney(value: unknown, label: string): number {
@@ -222,6 +225,7 @@ function buildEngineContext(snap: AuctionSnapshot): EngineContext {
     settings: {
       minSquadSize: snap.settings.minSquadSize,
       bidIncrement: snap.settings.bidIncrement,
+      bidIncrementTiers: snap.settings.bidIncrementTiers,
       captainsCount: snap.settings.captainsCount,
     },
     openCategoryIds: (snap.state.openCategoryIds ?? []).filter((id) =>
@@ -325,7 +329,7 @@ function assertTeamCanAfford(
 /**
  * Any player left LIVE other than the current lot is a crash leftover. Reads
  * the candidates from the snapshot and mends it in place, so the common case
- * (nothing to repair) costs no Firestore calls at all.
+ * (nothing to repair) costs no database calls at all.
  */
 async function repairOrphanLivePlayers(
   snap: AuctionSnapshot,
@@ -350,32 +354,27 @@ function resultKey(kind: "SOLD" | "UNSOLD", playerId: string) {
 
 /**
  * Returns the state to IDLE, but only while it still points at the lot the
- * caller settled — the Firestore transaction stands in for Mongo's
- * conditional `findOneAndUpdate`. Returns null when another request got there
- * first.
+ * caller settled. One conditional `findOneAndUpdate`, so two requests racing
+ * to settle the same lot cannot both win. Returns null when another request
+ * got there first.
  */
 async function clearLiveAuctionState(
   expectedPlayerId: string | null,
   lastResult?: StoredLastResult
 ): Promise<AuctionStateDoc | null> {
-  return getDb().runTransaction(async (txn) => {
-    const snapshot = await txn.get(stateRef());
-    if (!snapshot.exists) return null;
-
-    const state = AuctionStateStore.hydrate(snapshot);
-    if (state.status !== "LIVE") return null;
-    if (expectedPlayerId && state.currentPlayerId !== expectedPlayerId) return null;
-
-    const patch = {
-      status: "IDLE" as const,
+  return AuctionStateStore.findOneAndUpdate(
+    {
+      _id: STATE_ID,
+      status: "LIVE",
+      ...(expectedPlayerId ? { currentPlayerId: expectedPlayerId } : {}),
+    },
+    {
+      status: "IDLE",
       currentPlayerId: null,
       bids: [],
       ...(lastResult ? { lastResult } : {}),
-      updatedAt: new Date(),
-    };
-    txn.update(stateRef(), patch);
-    return { ...state, ...patch };
-  });
+    }
+  );
 }
 
 /**
@@ -670,23 +669,17 @@ export async function startAuction(playerId: string) {
     throw new ServiceError("Player is not available to auction");
   }
 
-  const claimedState = await getDb().runTransaction(async (txn) => {
-    const snapshot = await txn.get(stateRef());
-    if (!snapshot.exists) return null;
-
-    const state = AuctionStateStore.hydrate(snapshot);
-    if (state.status !== "IDLE") return null;
-
-    txn.update(stateRef(), {
+  // $inc rather than a read-then-write, so the lot number cannot be reused.
+  const claimedState = await AuctionStateStore.findOneAndUpdate(
+    { _id: STATE_ID, status: "IDLE" },
+    {
       status: "LIVE",
       currentPlayerId: player._id,
       bids: [],
       lastResult: null,
-      lotNo: (state.lotNo ?? 0) + 1,
-      updatedAt: new Date(),
-    });
-    return state;
-  });
+      $inc: { lotNo: 1 },
+    }
+  );
 
   if (!claimedState) {
     await Players.updateById(player._id, { status: player.status });
@@ -708,18 +701,10 @@ async function claimPlayerStatus(
   expected: PlayerStatus[],
   patch: Partial<PlayerDoc>
 ): Promise<PlayerDoc | null> {
-  const docRef = Players.ref().doc(playerId);
-
-  return getDb().runTransaction(async (txn) => {
-    const snapshot = await txn.get(docRef);
-    if (!snapshot.exists) return null;
-
-    const player = Players.hydrate(snapshot);
-    if (!expected.includes(player.status)) return null;
-
-    txn.update(docRef, { ...patch, updatedAt: new Date() });
-    return { ...player, ...patch } as PlayerDoc;
-  });
+  return Players.findOneAndUpdate(
+    { _id: playerId, status: { $in: expected } },
+    patch
+  );
 }
 
 /**
@@ -894,21 +879,17 @@ export async function placeBid(teamId: string, amount: number) {
   if (!verdict.ok) throw new ServiceError(verdict.message);
 
   // Guard against two bids landing at once: the ledger must not have grown.
-  const appended = await getDb().runTransaction(async (txn) => {
-    const snapshot = await txn.get(stateRef());
-    if (!snapshot.exists) return false;
-
-    const current = AuctionStateStore.hydrate(snapshot);
-    if (current.status !== "LIVE") return false;
-    if (current.currentPlayerId !== player._id) return false;
-    if ((current.bids ?? []).length !== bids.length) return false;
-
-    txn.update(stateRef(), {
-      bids: [...(current.bids ?? []), { teamId, amount, at: new Date() }],
-      updatedAt: new Date(),
-    });
-    return true;
-  });
+  // $size pins the ledger to the length the limit was checked against, so a
+  // bid that raced another one is refused rather than silently accepted.
+  const appended = await AuctionStateStore.findOneAndUpdate(
+    {
+      _id: STATE_ID,
+      status: "LIVE",
+      currentPlayerId: player._id,
+      bids: { $size: bids.length },
+    },
+    { $push: { bids: { teamId, amount, at: new Date() } } }
+  );
 
   if (!appended) {
     invalidateSnapshot();
@@ -929,20 +910,15 @@ export async function undoLastBid() {
     throw new ServiceError("There is no bid to undo");
   }
 
-  await getDb().runTransaction(async (txn) => {
-    const snapshot = await txn.get(stateRef());
-    if (!snapshot.exists) return;
-
-    const current = AuctionStateStore.hydrate(snapshot);
-    if (current.status !== "LIVE") return;
-    if (current.currentPlayerId !== state.currentPlayerId) return;
-    if (!(current.bids ?? []).length) return;
-
-    txn.update(stateRef(), {
-      bids: current.bids.slice(0, -1),
-      updatedAt: new Date(),
-    });
-  });
+  await AuctionStateStore.findOneAndUpdate(
+    {
+      _id: STATE_ID,
+      status: "LIVE",
+      currentPlayerId: state.currentPlayerId,
+      "bids.0": { $exists: true },
+    } as never,
+    { $pop: { bids: 1 } }
+  );
 
   invalidateSnapshot();
   return getFullState();

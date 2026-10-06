@@ -16,7 +16,8 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { readFileSync } from "fs";
-import { getSingleton } from "../src/lib/firestore";
+import { closeDb } from "../src/lib/mongo";
+import { getSingleton } from "../src/lib/db";
 import { Players, type PlayerRole } from "../src/models/Player";
 import { Teams } from "../src/models/Team";
 import { Users } from "../src/models/User";
@@ -36,10 +37,35 @@ import { recordTransaction } from "../src/lib/services/wallet-ledger";
 const LAKH = 100_000;
 const CRORE = 100 * LAKH;
 
-const INITIAL_BUDGET = 100 * CRORE; // 100 Cr per team
-const MAX_SQUAD_SIZE = 19; // captains included
-const MIN_SQUAD_SIZE = 12; // raise once the full roster is loaded
-const BID_INCREMENT = 5 * LAKH;
+const INITIAL_BUDGET = 120 * CRORE; // 12,000L per team
+/**
+ * 20 per squad: 16 general + 2 captains + 1 Specialist + 1 Star. The minimum
+ * equals the maximum, so the engine holds every team to a complete squad and
+ * reserves the money to finish it.
+ */
+const MAX_SQUAD_SIZE = 20;
+const MIN_SQUAD_SIZE = 20;
+
+/**
+ * Bids rise in bands: 20L up to 1Cr, 50L to 4Cr, 100L beyond. The flat value
+ * is only a fallback for settings written before the bands existed.
+ */
+const BID_INCREMENT = 20 * LAKH;
+const BID_INCREMENT_TIERS = [
+  { from: 0, increment: 20 * LAKH },
+  { from: 100 * LAKH, increment: 50 * LAKH },
+  { from: 400 * LAKH, increment: 100 * LAKH },
+];
+
+/**
+ * The two special rounds are priced by the rules, not by the sheet. Their
+ * base prices are what the engine holds back from the opening round: a team
+ * starts with 12,000L and can spend 9,500L until these rounds open.
+ */
+const SPECIAL_BASE_PRICE: Record<string, number> = {
+  Specialist: 1000 * LAKH,
+  "Power Player": 1500 * LAKH,
+};
 
 /**
  * Each team is named "<male captain> & <female captain>" by first name; the
@@ -259,7 +285,7 @@ async function main() {
     const limits = SPECIAL_LIMITS[name] ?? { minPerTeam: 0, maxPerTeam: null };
     const cat = await PlayerCategories.create({
       name,
-      defaultBasePrice: 0,
+      defaultBasePrice: SPECIAL_BASE_PRICE[name] ?? 0,
       order: order++,
       minPerTeam: limits.minPerTeam,
       maxPerTeam: limits.maxPerTeam,
@@ -339,6 +365,7 @@ async function main() {
     defaultMaxSquadSize: MAX_SQUAD_SIZE,
     minSquadSize: MIN_SQUAD_SIZE,
     bidIncrement: BID_INCREMENT,
+    bidIncrementTiers: BID_INCREMENT_TIERS,
     captainsCount: true,
   });
 
@@ -363,12 +390,18 @@ async function main() {
   for (const t of TEAMS) {
     console.log(`              ${t.name.padEnd(20)} ${t.captainMale} / ${t.captainFemale}`);
   }
-  if (specials.length) {
-    console.log(
-      `\nNOTE: ${specials.join(" and ")} have no base price yet — set them in\n` +
-      `      Admin -> Configuration -> Player Categories before opening those rounds.`
-    );
+  for (const name of specials) {
+    const price = SPECIAL_BASE_PRICE[name];
+    if (!price) {
+      console.log(`\nNOTE: "${name}" has no base price — set it in Admin -> Configuration.`);
+    }
   }
+
+  const held = specials.reduce((sum, n) => sum + (SPECIAL_BASE_PRICE[n] ?? 0), 0);
+  console.log(`\npurse release:`);
+  console.log(`  total per team          ${(INITIAL_BUDGET / LAKH).toLocaleString("en-IN")}L`);
+  console.log(`  held for special rounds ${(held / LAKH).toLocaleString("en-IN")}L`);
+  console.log(`  spendable in round 1    ${((INITIAL_BUDGET - held) / LAKH).toLocaleString("en-IN")}L`);
 
   reportSquadMaths(byCategory, [...categoryIds.keys()], TEAMS.length);
 }
@@ -423,7 +456,9 @@ function reportSquadMaths(
   }
 }
 
-main().catch((err) => {
+main()
+  .catch((err) => {
   console.error(String(err instanceof Error ? err.message : err));
   process.exit(1);
-});
+  })
+  .finally(() => closeDb());

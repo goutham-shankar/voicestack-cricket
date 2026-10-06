@@ -10,7 +10,7 @@ export async function POST() {
 
   try {
     const state = await undoLastBid();
-    broadcastAuction("auction:state", state);
+    await broadcastAuction("auction:state", state);
     return NextResponse.json(state);
   } catch (err) {
     return handleServiceError(err);

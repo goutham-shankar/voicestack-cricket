@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
+import { closeDb } from "../src/lib/mongo";
 import { Teams } from "../src/models/Team";
 import { Players } from "../src/models/Player";
 import {
@@ -48,7 +49,9 @@ async function main() {
   console.log(`  purchase entries added: ${debitsAdded}`);
 }
 
-main().catch((err) => {
+main()
+  .catch((err) => {
   console.error(err);
   process.exit(1);
-});
+  })
+  .finally(() => closeDb());

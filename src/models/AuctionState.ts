@@ -1,4 +1,4 @@
-import { collection, type Doc } from "@/lib/firestore";
+import { collection, type Doc } from "@/lib/db";
 
 export const AUCTION_STATUSES = ["IDLE", "LIVE"] as const;
 

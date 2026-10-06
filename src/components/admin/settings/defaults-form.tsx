@@ -18,10 +18,21 @@ type SettingsDoc = {
   // Added with the auction board; older documents will not have them.
   minSquadSize?: number;
   bidIncrement?: number;
+  bidIncrementTiers?: { from: number; increment: number }[];
   captainsCount?: boolean;
 };
 
+/** Lakh / crore shorthand, matching how the rules sheet is written. */
+function money(n: number): string {
+  if (n >= 1_00_00_000) return `${+(n / 1_00_00_000).toFixed(2)}Cr`;
+  if (n >= 1_00_000) return `${+(n / 1_00_000).toFixed(2)}L`;
+  return n.toLocaleString("en-IN");
+}
+
 export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc }) {
+  const bands = [...(initialSettings.bidIncrementTiers ?? [])].sort(
+    (a, b) => a.from - b.from
+  );
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -122,11 +133,33 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
               id="bidIncrement"
               type="number"
               step="any"
+              disabled={bands.length > 0}
               {...register("bidIncrement", { valueAsNumber: true })}
             />
-            <p className="text-xs text-muted-foreground">
-              The least each bid must rise by.
-            </p>
+            {bands.length > 0 ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>
+                  Bids rise in bands, so this single figure is not used. The
+                  bands are set when the auction is seeded:
+                </p>
+                <ul className="tabular-money">
+                  {bands.map((band, i) => {
+                    const next = bands[i + 1];
+                    return (
+                      <li key={band.from}>
+                        {money(band.from)}
+                        {next ? ` to ${money(next.from)}` : " and above"} — rises
+                        by {money(band.increment)}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                The least each bid must rise by.
+              </p>
+            )}
             {errors.bidIncrement && (
               <p className="text-sm text-destructive">
                 {errors.bidIncrement.message}

@@ -4,8 +4,8 @@ import { getStateVersion } from "@/lib/services/auction-service";
 
 /**
  * The board's change signature, for clients polling without a socket. Costs a
- * single document read, against ~112 for the full state, so a room full of
- * screens can poll often without running up the Firestore bill.
+ * single document read, against a full snapshot of every collection, so a room
+ * full of screens can poll often without loading the database.
  */
 export async function GET() {
   const { response: unauthorized } = await requireAuth();

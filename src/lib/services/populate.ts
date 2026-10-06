@@ -5,8 +5,11 @@ import type { PlayerDoc } from "@/models/Player";
 import { getCategories, getTags, getTeams } from "@/lib/services/catalog";
 
 /**
- * Firestore has no joins, so references are resolved here — the replacement for
- * Mongoose's `.populate()`. The output keeps the original field names
+ * References are resolved here, in memory, rather than with `$lookup` — the
+ * replacement for Mongoose's `.populate()`. The collections are small and
+ * already loaded for other reasons, so joining in the database would cost a
+ * round trip to repeat work this process has done. The output keeps the
+ * original field names
  * (`categoryId`, `tagIds`, `soldToTeamId`) holding whole documents, so every
  * client component that already read `player.categoryId.name` still works.
  */

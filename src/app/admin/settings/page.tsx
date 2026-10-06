@@ -1,4 +1,4 @@
-import { getSingleton } from "@/lib/firestore";
+import { getSingleton } from "@/lib/db";
 import { getCategories, getTags } from "@/lib/services/catalog";
 import { AuctionSettingsStore } from "@/models/AuctionSettings";
 import { CategoriesPanel } from "@/components/admin/settings/categories-panel";

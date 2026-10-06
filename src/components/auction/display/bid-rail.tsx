@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import type { AuctionPhase } from "@/lib/auction-phase";
+import { compactMoney, type AuctionPhase } from "@/lib/auction-phase";
 
 /**
  * A single bid on the current lot.
@@ -65,7 +65,7 @@ export function BidRail({
    * — and the headline must not wrap, so the face is sized to the number
    * rather than fixed. Without this the largest bids overflow the stage.
    */
-  const headlineText = headline.toLocaleString("en-IN");
+  const headlineText = compactMoney(headline);
   const headlineFontSize =
     headlineText.length >= 12
       ? "clamp(2rem, 3.9vw, 4.5rem)"
@@ -123,7 +123,7 @@ export function BidRail({
 
         {hasBid && basePrice > 0 && (
           <p className="mt-2.5 text-sm font-semibold uppercase tracking-[0.2em] text-white/68">
-            Base {basePrice.toLocaleString("en-IN")}
+            Base {compactMoney(basePrice)}
           </p>
         )}
       </div>
@@ -191,7 +191,7 @@ export function BidRail({
                       i === 0 ? "text-gold" : "text-white"
                     )}
                   >
-                    {bid.amount.toLocaleString("en-IN")}
+                    {compactMoney(bid.amount)}
                   </span>
                   <span className="flex items-center gap-2.5 truncate text-lg font-semibold text-white/90">
                     <TeamCrest name={bid.teamName} logoUrl={bid.teamLogoUrl} className="size-7" />

@@ -2,25 +2,43 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Database
 
-Data lives in **Cloud Firestore**, reached from the server through the Firebase
-Admin SDK (`src/lib/firebase.ts`). Collections: `users`, `teams`, `players`,
+Data lives in **MongoDB**, reached through the official driver
+(`src/lib/mongo.ts`). Collections: `users`, `teams`, `players`,
 `playerCategories`, `playerTags`, `walletTransactions`, plus the single-document
-`auctionSettings/global` and `auctionState/global`.
+`auctionSettings` and `auctionState` (both keyed `global`).
 
-Set one of these in `.env.local`:
+Set in `.env.local`:
 
-- `FIREBASE_SERVICE_ACCOUNT_KEY` — the service-account JSON on one line, raw or
-  base64 (Firebase console → Project settings → Service accounts).
-- `GOOGLE_APPLICATION_CREDENTIALS` + `FIREBASE_PROJECT_ID` — a key file on disk.
-- `FIRESTORE_EMULATOR_HOST=localhost:8080` — the local emulator, no credential
-  needed.
+- `MONGODB_URI` — e.g. `mongodb://127.0.0.1:27017` locally, or an Atlas
+  `mongodb+srv://` string.
+- `MONGODB_DB` — database name. Optional when the URI already names one.
 
-`src/lib/firestore.ts` is the small query layer the collections are built on. It
-sorts in memory rather than with `orderBy`, so no composite indexes are needed,
-and it enforces unique fields (team name, category name, tag name, user email)
-transactionally, because Firestore has no unique indexes.
+No replica set is required. Every atomic claim the auction makes is a
+single-document `findOneAndUpdate`, and the wallet ledger serialises its appends
+with a unique index rather than a transaction, so a plain standalone `mongod`
+is enough.
+
+`src/lib/db.ts` is the small query layer the collections are built on. It sorts
+in memory rather than in the database, keeping the ordering rules (nulls last,
+locale-aware string compare) identical for every collection, and it backs the
+unique fields — team name, category name, tag name, user email, and
+(`teamId`, `seq`) on the ledger — with real unique indexes, created on first
+use. `_id` is an ObjectId in the database and a string everywhere above that
+file.
 
 Seed a first login with `npm run seed:admin`.
+
+Check the data layer and the auction service against a live database with
+`npx tsx scripts/check-db.ts`. It runs against its own scratch database and
+wipes it, so it can never touch real auction data.
+
+## Live updates
+
+Screens are kept current by Socket.IO where one is reachable, and by polling
+`/api/auction/version` where it is not. Vercel cannot hold a WebSocket open, so
+production uses the standalone relay in [`socket-server/`](socket-server) —
+see its README for AWS deployment. With no relay configured the room still works,
+about 1.5s behind.
 
 ## Getting Started
 

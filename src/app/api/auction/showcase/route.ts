@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const state = await setShowcase(enabled);
-    broadcastAuction("auction:state", state);
+    await broadcastAuction("auction:state", state);
     return NextResponse.json(state);
   } catch (err) {
     return handleServiceError(err);

@@ -12,6 +12,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import bcrypt from "bcryptjs";
+import { closeDb } from "../src/lib/mongo";
 import { Users } from "../src/models/User";
 import { Teams } from "../src/models/Team";
 
@@ -60,7 +61,9 @@ async function main() {
   console.log("\nShare each line with its own team only.");
 }
 
-main().catch((err) => {
+main()
+  .catch((err) => {
   console.error(String(err instanceof Error ? err.message : err));
   process.exit(1);
-});
+  })
+  .finally(() => closeDb());

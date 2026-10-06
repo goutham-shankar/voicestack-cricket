@@ -1,4 +1,4 @@
-import { collection, type Doc } from "@/lib/firestore";
+import { collection, type Doc } from "@/lib/db";
 
 export const WALLET_TRANSACTION_TYPES = ["CREDIT", "DEBIT", "ADJUSTMENT"] as const;
 
@@ -12,6 +12,13 @@ export type WalletTransaction = {
   balanceAfter: number;
   playerId: string | null;
   note: string;
+  /**
+   * Position in this team's ledger, starting at 1. A compound unique index on
+   * (teamId, seq) is what makes the append atomic: two concurrent purchases
+   * both computing the same next number means one of them is rejected and
+   * retries against the balance the winner wrote.
+   */
+  seq: number;
 };
 
 export type WalletTransactionDoc = Doc<WalletTransaction>;
@@ -25,5 +32,7 @@ export const WalletTransactions = collection<WalletTransaction>({
     balanceAfter: 0,
     playerId: null,
     note: "",
+    seq: 0,
   }),
+  uniqueCompound: [["teamId", "seq"]],
 });

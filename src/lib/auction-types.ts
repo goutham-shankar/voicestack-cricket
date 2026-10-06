@@ -138,8 +138,10 @@ export type AuctionStats = {
 export type AuctionRuntimeSettings = {
   /** Smallest squad every team must reach, captains included when they count. */
   minSquadSize: number;
-  /** How much each bid must rise by. */
+  /** Fallback step, used only when no tiers are configured. */
   bidIncrement: number;
+  /** Banded steps: how much a bid must rise by, given what it rises from. */
+  bidIncrementTiers?: { from: number; increment: number }[];
   captainsCount: boolean;
 };
 

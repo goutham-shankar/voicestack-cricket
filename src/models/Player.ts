@@ -1,4 +1,4 @@
-import { collection, type Doc } from "@/lib/firestore";
+import { collection, type Doc } from "@/lib/db";
 import type { PLAYER_ROLES, PLAYER_STATUSES } from "@/lib/constants";
 
 export type PlayerRole = (typeof PLAYER_ROLES)[number];

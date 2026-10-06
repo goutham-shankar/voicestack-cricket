@@ -1,14 +1,21 @@
 /**
- * Asserts the Firestore data layer and the auction service against a live
+ * Asserts the MongoDB data layer and the auction service against a live
  * database, so a drifted query or a lost atomic claim fails loudly. Companion
  * to check-auction-engine.ts, which covers the pure engine.
  *
- * WIPES EVERY COLLECTION, so point it at an emulator, never a real project:
- *   firebase emulators:start --only firestore --project demo-voicestack
- *   npx tsx scripts/check-firestore.ts
+ * WIPES EVERY COLLECTION, so it runs against its own scratch database and
+ * refuses to touch anything else:
+ *   npx tsx scripts/check-db.ts
  */
-process.env.FIRESTORE_EMULATOR_HOST ??= "127.0.0.1:8080";
-process.env.FIREBASE_PROJECT_ID ??= "demo-voicestack";
+import { config } from "dotenv";
+config({ path: ".env.local" });
+
+const SCRATCH_DB = "voicestack_check";
+
+// Forced, not defaulted: the suite must never be able to inherit the app's
+// database from the environment and wipe real auction data.
+process.env.MONGODB_DB = SCRATCH_DB;
+process.env.MONGODB_URI ??= "mongodb://127.0.0.1:27017";
 
 import { Players } from "@/models/Player";
 import { Teams } from "@/models/Team";
@@ -18,9 +25,9 @@ import { PlayerTags } from "@/models/PlayerTag";
 import { AuctionSettingsStore } from "@/models/AuctionSettings";
 import { AuctionStateStore } from "@/models/AuctionState";
 import { WalletTransactions } from "@/models/WalletTransaction";
-import { FieldValue } from "firebase-admin/firestore";
-import { getSingleton } from "@/lib/firestore";
+import { getSingleton } from "@/lib/db";
 import { isDuplicateKeyError } from "@/lib/db-errors";
+import { incrementFor, minNextBid } from "@/lib/auction-engine";
 import { recordTransaction, getTeamLedger, getLedgerSummary } from "@/lib/services/wallet-ledger";
 import {
   getFullState,
@@ -64,11 +71,44 @@ async function main() {
 
   console.log("\n— settings singleton —");
   const settings = await getSingleton(AuctionSettingsStore);
-  eq("seeded with defaults", settings.bidIncrement, 500);
+  eq("seeded with defaults", settings.bidIncrement, 20 * 100_000);
+  eq("and with bid bands", settings.bidIncrementTiers?.length, 3);
   eq("singleton id", settings._id, "global");
-  await AuctionSettingsStore.updateById("global", { minSquadSize: 3, bidIncrement: 100 });
+  // A single band, so the rest of this file can reason in round numbers.
+  await AuctionSettingsStore.updateById("global", {
+    minSquadSize: 3,
+    bidIncrement: 100,
+    bidIncrementTiers: [{ from: 0, increment: 100 }],
+  });
   eq("update sticks", (await getSingleton(AuctionSettingsStore)).minSquadSize, 3);
   eq("re-reading does not duplicate", await AuctionSettingsStore.count(), 1);
+
+  console.log("\n— banded bid increments —");
+  {
+    const L = 100_000;
+    const bands = [
+      { from: 0, increment: 20 * L },
+      { from: 100 * L, increment: 50 * L },
+      { from: 400 * L, increment: 100 * L },
+    ];
+    const settingsWithBands = {
+      minSquadSize: 3,
+      bidIncrement: 20 * L,
+      bidIncrementTiers: bands,
+      captainsCount: true,
+    };
+    eq("20L rises by 20L", incrementFor(20 * L, settingsWithBands) / L, 20);
+    eq("99L rises by 20L", incrementFor(99 * L, settingsWithBands) / L, 20);
+    eq("100L rises by 50L", incrementFor(100 * L, settingsWithBands) / L, 50);
+    eq("399L rises by 50L", incrementFor(399 * L, settingsWithBands) / L, 50);
+    eq("400L rises by 100L", incrementFor(400 * L, settingsWithBands) / L, 100);
+    eq("1500L rises by 100L", incrementFor(1500 * L, settingsWithBands) / L, 100);
+    eq(
+      "a standing bid of 80L must be raised to 100L",
+      minNextBid([{ teamId: "x", amount: 80 * L }], 20 * L, settingsWithBands) / L,
+      100
+    );
+  }
 
   console.log("\n— unique fields —");
   const regular = await PlayerCategories.create({ name: "Regular", defaultBasePrice: 1000, order: 0, minPerTeam: 0, maxPerTeam: null });
@@ -243,7 +283,7 @@ async function main() {
   );
   await Players.updateMany(
     { tagIds: { $contains: doomed._id } },
-    { tagIds: FieldValue.arrayRemove(doomed._id) }
+    { $pull: { tagIds: doomed._id } }
   );
   const stripped = await Players.findById(third._id);
   eq("tag removed from the player", stripped?.tagIds.length, 1);
@@ -255,7 +295,7 @@ async function main() {
   eq("both rounds now open", roundState.auctionState.openCategoryIds.length, 2);
   eq("current round switched", roundState.auctionState.currentCategoryId, premium._id);
 
-  console.log(failures ? `\n${failures} check(s) FAILED\n` : "\nAll Firestore checks passed\n");
+  console.log(failures ? `\n${failures} check(s) FAILED\n` : "\nAll database checks passed\n");
   process.exit(failures ? 1 : 0);
 }
 

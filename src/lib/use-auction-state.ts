@@ -15,10 +15,10 @@ const POLL_INTERVAL_MS = 1500;
 const HIDDEN_POLL_INTERVAL_MS = 10000;
 
 /**
- * Most polls find nothing has changed, and the full board costs ~112 Firestore
- * reads to build. So each tick asks for a one-document change signature first
- * and only pulls the board when it moves — roughly a hundredfold fewer reads
- * while idle, at the same responsiveness.
+ * Most polls find nothing has changed, and the full board is built from every
+ * collection. So each tick asks for a one-document change signature first and
+ * only pulls the board when it moves — far less work per idle tick, at the same
+ * responsiveness.
  *
  * Edits made outside the auction (an admin renaming a player) do not move the
  * signature, so the board is also refreshed in full on this slower timer.

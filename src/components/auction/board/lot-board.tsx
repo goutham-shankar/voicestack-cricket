@@ -1,7 +1,7 @@
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { fmt } from "@/lib/auction-engine";
+import { fmt, incrementFor } from "@/lib/auction-engine";
 import type { FullAuctionState } from "@/lib/auction-types";
 import { teamColor } from "@/components/auction/board/board-utils";
 import { ResultStamp } from "@/components/auction/board/result-stamp";
@@ -187,7 +187,7 @@ export function LotBoard({
               aria-label="Lower the next bid"
               onClick={() =>
                 onNextBidChange(
-                  Math.max(minNext, nextBid - state.settings.bidIncrement)
+                  Math.max(minNext, nextBid - incrementFor(nextBid, state.settings))
                 )
               }
             >
@@ -208,7 +208,9 @@ export function LotBoard({
               type="button"
               className="btn sq"
               aria-label="Raise the next bid"
-              onClick={() => onNextBidChange(nextBid + state.settings.bidIncrement)}
+              onClick={() =>
+                onNextBidChange(nextBid + incrementFor(nextBid, state.settings))
+              }
             >
               +
             </button>

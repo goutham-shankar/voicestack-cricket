@@ -40,11 +40,37 @@ export type EngineCategory = {
   maxPerTeam: number | null;
 };
 
+/**
+ * How much a bid must rise by, banded by the price it is rising from — the
+ * usual auction shape, where small lots move in small steps and big ones do
+ * not crawl. `from` is inclusive and the bands are applied highest-first.
+ */
+export type BidIncrementTier = { from: number; increment: number };
+
 export type EngineSettings = {
   minSquadSize: number;
+  /** Used when no tiers are configured. */
   bidIncrement: number;
+  /** When set, replaces `bidIncrement` entirely. */
+  bidIncrementTiers?: BidIncrementTier[];
   captainsCount: boolean;
 };
+
+/** The step that applies to a bid standing at `amount`. */
+export function incrementFor(amount: number, settings: EngineSettings): number {
+  const tiers = settings.bidIncrementTiers;
+  if (!tiers?.length) return settings.bidIncrement;
+
+  let step = settings.bidIncrement;
+  let best = -Infinity;
+  for (const tier of tiers) {
+    if (amount >= tier.from && tier.from >= best) {
+      best = tier.from;
+      step = tier.increment;
+    }
+  }
+  return step;
+}
 
 export type EngineTeam = {
   id: string;
@@ -335,7 +361,9 @@ export function lastBid(bids: Bid[]): Bid | null {
  */
 export function minNextBid(bids: Bid[], lotBasePrice: number, settings: EngineSettings): number {
   const last = lastBid(bids);
-  return last ? r2(last.amount + settings.bidIncrement) : r2(lotBasePrice);
+  return last
+    ? r2(last.amount + incrementFor(last.amount, settings))
+    : r2(lotBasePrice);
 }
 
 export function shortReason(code: BidRefusalCode): string {

@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { fmt } from "@/lib/auction-engine";
+import { fmt, incrementFor } from "@/lib/auction-engine";
 import { useAuctionState } from "@/lib/use-auction-state";
 import type { FullAuctionState } from "@/lib/auction-types";
 import { boardFontClass } from "@/components/auction/board/fonts";
@@ -67,7 +67,7 @@ export function AuctionBoard() {
           { teamId, amount, at: new Date().toISOString() },
         ],
       },
-      minNextBid: amount + current.settings.bidIncrement,
+      minNextBid: amount + incrementFor(amount, current.settings),
     }),
     []
   );
@@ -101,7 +101,7 @@ export function AuctionBoard() {
     onUndo: () => void run(() => post("/api/auction/bid/undo")),
     onNudge: (direction) => {
       if (minNext == null || !state) return;
-      const step = state.settings.bidIncrement * direction;
+      const step = incrementFor(effectiveNextBid, state.settings) * direction;
       setNextBid(Math.max(minNext, effectiveNextBid + step));
     },
   });

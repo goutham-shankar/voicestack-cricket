@@ -2,6 +2,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import bcrypt from "bcryptjs";
+import { closeDb } from "../src/lib/mongo";
 import { Users } from "../src/models/User";
 
 const EMAIL = process.env.SEED_AUCTIONEER_EMAIL || "auctioneer@voicestack.com";
@@ -34,7 +35,9 @@ async function main() {
   console.log(`Auctioneer created: ${email}`);
 }
 
-main().catch((err) => {
+main()
+  .catch((err) => {
   console.error(err);
   process.exit(1);
-});
+  })
+  .finally(() => closeDb());
