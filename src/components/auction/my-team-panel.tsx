@@ -43,7 +43,7 @@ export function MyTeamPanel({ team }: { team: TeamSummary }) {
             {slotReserve > 0 && (
               <>
                 {" "}
-                · ₹{slotReserve.toLocaleString("en-IN")} locked for later rounds
+                · {slotReserve.toLocaleString("en-IN")} locked for later rounds
               </>
             )}
           </p>
@@ -76,13 +76,13 @@ export function MyTeamPanel({ team }: { team: TeamSummary }) {
           <span>
             Spent{" "}
             <span className="font-medium text-foreground tabular-money">
-              ₹{team.spent.toLocaleString("en-IN")}
+              {team.spent.toLocaleString("en-IN")}
             </span>
           </span>
           <span>
             Budget{" "}
             <span className="font-medium text-foreground tabular-money">
-              ₹{team.initialBudget.toLocaleString("en-IN")}
+              {team.initialBudget.toLocaleString("en-IN")}
             </span>
           </span>
         </div>
@@ -121,7 +121,7 @@ function PurseStat({
     <div className="rounded-xl border border-border bg-card/40 px-3 py-3 text-center">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={cn("mt-1 tabular-money text-lg font-semibold", valueClass)}>
-        {empty ? "—" : `₹${value.toLocaleString("en-IN")}`}
+        {empty ? "—" : `${value.toLocaleString("en-IN")}`}
       </p>
       <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>
     </div>
@@ -196,7 +196,7 @@ export function MySquadList({
             </p>
           </div>
           <p className="tabular-money text-sm font-semibold">
-            ₹{(player.soldPrice ?? 0).toLocaleString("en-IN")}
+            {(player.soldPrice ?? 0).toLocaleString("en-IN")}
           </p>
         </li>
       ))}

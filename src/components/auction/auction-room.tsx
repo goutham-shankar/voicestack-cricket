@@ -11,24 +11,10 @@ import { Circle, WifiOff, Tv, AlertTriangle } from "lucide-react";
 import { useAuctionState } from "@/lib/use-auction-state";
 import { PlayerSpotlight } from "@/components/auction/player-spotlight";
 import { RecentSalesList } from "@/components/auction/recent-sales-list";
-import { AuctionTimer } from "@/components/auction/auction-timer";
 import { TeamWalletStrip } from "@/components/auction/team-wallet-strip";
 import { MySquadList, MyTeamPanel } from "@/components/auction/my-team-panel";
 import { StatsBar } from "@/components/auction/stats-bar";
 import { ControlPanel } from "@/components/auction/control-panel";
-import type { FullAuctionState } from "@/lib/auction-types";
-
-function scopeStateToTeam(
-  state: FullAuctionState,
-  teamId: string
-): FullAuctionState {
-  return {
-    ...state,
-    teams: state.teams.filter((t) => String(t._id) === String(teamId)),
-    // Franchise users don't need the pending queue — admin starts lots.
-    pendingPlayers: [],
-  };
-}
 
 export function AuctionRoom({
   role,
@@ -37,21 +23,29 @@ export function AuctionRoom({
   role: "admin" | "auctioneer" | "team";
   myTeam?: { _id: string; name: string } | null;
 }) {
-  // Only admin runs the room — start / timer / record the offline sale result.
+  // Only admin runs the room — start the lot / record the offline sale result.
   // Auctioneer and team accounts are read-only: bidding happens verbally, offline.
   const canControl = role === "admin";
   const canSell = role === "admin";
   const showControls = canControl || canSell;
-  const franchiseView = role === "auctioneer" || role === "team";
+  /**
+   * Everyone in the room sees the same board — the live lot, the running
+   * stats and every team's purse. An auction is public by nature: a team
+   * cannot bid sensibly without knowing what its rivals can still spend.
+   * Only the controls are privileged.
+   *
+   * A franchise login additionally gets its own team and squad called out.
+   */
+  const ownTeamView = myTeam != null;
   const showRecentSales = role !== "auctioneer";
   const [squadRefreshKey, setSquadRefreshKey] = useState(0);
 
   const { state, connected } = useAuctionState({
     onSold: (result) => {
       toast.success(`${result.playerName} SOLD to ${result.teamName}`, {
-        description: `₹${result.price.toLocaleString("en-IN")}`,
+        description: `${result.price.toLocaleString("en-IN")}`,
       });
-      if (franchiseView) setSquadRefreshKey((k) => k + 1);
+      if (myTeam) setSquadRefreshKey((k) => k + 1);
     },
     onUnsold: (result) => toast(`${result.playerName} went UNSOLD`),
   });
@@ -64,7 +58,7 @@ export function AuctionRoom({
     );
   }
 
-  if (franchiseView && !myTeam) {
+  if (role === "team" && !myTeam) {
     return (
       <Alert variant="destructive">
         <AlertTriangle className="size-4" />
@@ -76,8 +70,7 @@ export function AuctionRoom({
     );
   }
 
-  const viewState =
-    franchiseView && myTeam ? scopeStateToTeam(state, myTeam._id) : state;
+  const viewState = state;
 
   const isLive = viewState.auctionState.status === "LIVE";
   const myTeamSummary = myTeam
@@ -87,7 +80,7 @@ export function AuctionRoom({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {!franchiseView && <StatsBar stats={viewState.stats} />}
+        <StatsBar stats={viewState.stats} />
         <div className="ml-auto flex items-center gap-2">
           {!connected && (
             <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
@@ -119,7 +112,7 @@ export function AuctionRoom({
         </div>
       </div>
 
-      {franchiseView && myTeamSummary && (
+      {ownTeamView && myTeamSummary && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Your Team</CardTitle>
@@ -142,7 +135,6 @@ export function AuctionRoom({
             <PlayerSpotlight player={viewState.auctionState.currentPlayerId} />
             {isLive && (
               <div className="mt-4 flex justify-center">
-                <AuctionTimer auctionState={viewState.auctionState} />
               </div>
             )}
             {isLive && (
@@ -177,7 +169,7 @@ export function AuctionRoom({
         </Card>
       )}
 
-      {franchiseView && myTeam && (
+      {ownTeamView && myTeam && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Your Squad</CardTitle>
@@ -188,16 +180,14 @@ export function AuctionRoom({
         </Card>
       )}
 
-      {!franchiseView && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Teams</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <TeamWalletStrip teams={viewState.teams} />
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Teams</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TeamWalletStrip teams={viewState.teams} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

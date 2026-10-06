@@ -1,5 +1,4 @@
 import { auth } from "@/auth";
-import { getUserTeam } from "@/lib/session-team";
 import { UserMenu } from "@/components/user-menu";
 import { BrandLogo } from "@/components/brand-logo";
 
@@ -9,7 +8,6 @@ export default async function AuctioneerLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  const team = await getUserTeam(session?.user?.id);
 
   return (
     <div className="flex min-h-svh w-full flex-col">
@@ -19,7 +17,7 @@ export default async function AuctioneerLayout({
           <div className="leading-tight">
             <p className="text-sm font-semibold">Voicestack Cricket League</p>
             <p className="text-xs text-muted-foreground">
-              {team ? team.name : "Auctioneer"} · Live view
+              Auctioneer · Live view
             </p>
           </div>
         </div>

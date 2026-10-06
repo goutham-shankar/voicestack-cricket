@@ -153,7 +153,7 @@ export function TeamFormDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="team-budget">Wallet Budget (₹)</Label>
+              <Label htmlFor="team-budget">Wallet Budget</Label>
               <Input
                 id="team-budget"
                 type="number"

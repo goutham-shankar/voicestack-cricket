@@ -51,6 +51,27 @@ export function AuctionBoard() {
     [lotSignature]
   );
 
+  /**
+   * The board as it will be once the server accepts this bid. Applied the
+   * instant a paddle is pressed so the leading crest and the next-bid figure
+   * move with the operator rather than a round trip later; the authoritative
+   * state replaces it when the request returns, and a refusal rolls it back.
+   */
+  const withBid = useCallback(
+    (current: FullAuctionState, teamId: string, amount: number): FullAuctionState => ({
+      ...current,
+      auctionState: {
+        ...current.auctionState,
+        bids: [
+          ...current.auctionState.bids,
+          { teamId, amount, at: new Date().toISOString() },
+        ],
+      },
+      minNextBid: amount + current.settings.bidIncrement,
+    }),
+    []
+  );
+
   const run = useCallback(
     async (action: () => Promise<FullAuctionState>) => {
       setBusy(true);
@@ -73,9 +94,7 @@ export function AuctionBoard() {
     onBidTeam: (index) => {
       const team = state?.teams[index];
       if (!team?.board?.limit?.ok) return;
-      void run(() =>
-        post("/api/auction/bid", { teamId: team._id, amount: effectiveNextBid })
-      );
+      bid(team._id);
     },
     onSell: () => void run(() => post("/api/auction/sell")),
     onUnsold: () => void run(() => post("/api/auction/unsold")),
@@ -94,7 +113,7 @@ export function AuctionBoard() {
     for (const team of state.teams) {
       if (team.board && team.board.shortfall > 0) {
         issues.push(
-          `${team.name} is ₹${fmt(
+          `${team.name} is ${fmt(
             team.board.shortfall
           )} short of filling its squad at base prices.`
         );
@@ -133,8 +152,25 @@ export function AuctionBoard() {
   const auctionState = state.auctionState;
   const openRounds = new Set(auctionState.openCategoryIds);
 
-  const bid = (teamId: string) =>
-    run(() => post("/api/auction/bid", { teamId, amount: effectiveNextBid }));
+  /**
+   * Bids are the one action the operator repeats under time pressure, so they
+   * do not take the board's `busy` lock — several paddles can be pressed in
+   * quick succession and each is reconciled as its response lands.
+   */
+  const bid = (teamId: string) => {
+    if (!state) return;
+    const amount = effectiveNextBid;
+    apply(withBid(state, teamId, amount));
+
+    void post("/api/auction/bid", { teamId, amount })
+      .then(apply)
+      .catch(async (error) => {
+        toast.error(error instanceof Error ? error.message : "Bid was refused");
+        // Drop the optimistic bid by re-reading what the server actually holds.
+        const res = await fetch("/api/auction/state", { cache: "no-store" });
+        if (res.ok) apply(await res.json());
+      });
+  };
 
   return (
     <div className={`vpl-board ${boardFontClass}`}>
@@ -177,8 +213,8 @@ export function AuctionBoard() {
                 <span className="rt">{category.name} round</span>
                 <span className="rs">
                   {open
-                    ? `₹${fmt(category.defaultBasePrice)} released, ${waiting} waiting`
-                    : `Releases ₹${fmt(category.defaultBasePrice)} per team`}
+                    ? `${fmt(category.defaultBasePrice)} released, ${waiting} waiting`
+                    : `Releases ${fmt(category.defaultBasePrice)} per team`}
                 </span>
               </button>
             );

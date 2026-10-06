@@ -53,7 +53,7 @@ export async function PATCH(
     if (nextBudget < spent) {
       return NextResponse.json(
         {
-          error: `Budget cannot be below current spend (₹${spent.toLocaleString("en-IN")})`,
+          error: `Budget cannot be below current spend (${spent.toLocaleString("en-IN")})`,
         },
         { status: 400 }
       );
@@ -81,7 +81,7 @@ export async function PATCH(
         teamId: id,
         type: "ADJUSTMENT",
         amount: delta,
-        note: `Budget adjusted by admin (₹${existing.initialBudget.toLocaleString("en-IN")} → ₹${teamPatch.initialBudget.toLocaleString("en-IN")})`,
+        note: `Budget adjusted by admin (${existing.initialBudget.toLocaleString("en-IN")} → ${teamPatch.initialBudget.toLocaleString("en-IN")})`,
       });
     }
 

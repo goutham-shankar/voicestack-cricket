@@ -129,7 +129,7 @@ export function LotBoard({
     <>
       <div className="lot-head">
         <span className="catpill">{live.categoryId?.name ?? "Player"}</span>
-        <span>Base ₹{fmt(basePrice)}</span>
+        <span>Base {fmt(basePrice)}</span>
         <span>Lot {auctionState.lotNo}</span>
       </div>
 
@@ -152,7 +152,6 @@ export function LotBoard({
         <div>
           <span className="lbl">{last ? "Current bid" : "Opening bid"}</span>
           <div className="plate">
-            <span className="unit">₹</span>
             <span className="amount">{fmt(last ? last.amount : basePrice)}</span>
           </div>
         </div>
@@ -214,7 +213,7 @@ export function LotBoard({
               +
             </button>
           </div>
-          <div className="minnote">At least ₹{fmt(minNext)}</div>
+          <div className="minnote">At least {fmt(minNext)}</div>
         </div>
       </div>
 
@@ -239,7 +238,7 @@ export function LotBoard({
           onClick={onSell}
         >
           {last && leading
-            ? `Sell to ${leading.name} for ₹${fmt(last.amount)}`
+            ? `Sell to ${leading.name} for ${fmt(last.amount)}`
             : "Sell"}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={onUnsold}>

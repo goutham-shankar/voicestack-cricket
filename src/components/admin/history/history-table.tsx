@@ -73,14 +73,14 @@ export function HistoryTable({ players }: { players: PlayerRow[] }) {
                       </div>
                     </TableCell>
                     <TableCell className="tabular-money">
-                      ₹{basePrice.toLocaleString("en-IN")}
+                      {basePrice.toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={player.status} />
                     </TableCell>
                     <TableCell className="tabular-money font-medium text-primary">
                       {player.soldPrice != null
-                        ? `₹${player.soldPrice.toLocaleString("en-IN")}`
+                        ? `${player.soldPrice.toLocaleString("en-IN")}`
                         : "—"}
                     </TableCell>
                     <TableCell>{player.soldToTeamId?.name ?? "—"}</TableCell>

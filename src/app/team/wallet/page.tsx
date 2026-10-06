@@ -44,17 +44,17 @@ export default async function TeamWalletPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Starting Balance"
-          value={`₹${initialBudget.toLocaleString("en-IN")}`}
+          value={`${initialBudget.toLocaleString("en-IN")}`}
           icon={PiggyBank}
         />
         <StatCard
           label="Spent"
-          value={`₹${summary.spent.toLocaleString("en-IN")}`}
+          value={`${summary.spent.toLocaleString("en-IN")}`}
           icon={TrendingDown}
         />
         <StatCard
           label="Remaining Balance"
-          value={`₹${summary.remaining.toLocaleString("en-IN")}`}
+          value={`${summary.remaining.toLocaleString("en-IN")}`}
           icon={Wallet}
           accent="gold"
         />
@@ -90,11 +90,11 @@ export default async function TeamWalletPage() {
                           : "tabular-money text-sold"
                       }
                     >
-                      {txn.amount < 0 ? "-" : "+"}₹
+                      {txn.amount < 0 ? "-" : "+"}
                       {Math.abs(txn.amount).toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell className="text-right tabular-money">
-                      ₹{txn.balanceAfter.toLocaleString("en-IN")}
+                      {txn.balanceAfter.toLocaleString("en-IN")}
                     </TableCell>
                   </TableRow>
                 ))}

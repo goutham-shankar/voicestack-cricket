@@ -217,7 +217,7 @@ export function PlayersTable({
                     </TableCell>
                     <TableCell>{category?.name ?? "No category"}</TableCell>
                     <TableCell className="tabular-money font-medium text-primary">
-                      ₹{basePrice.toLocaleString("en-IN")}
+                      {basePrice.toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell>
                       {playerTags.length > 0 ? (

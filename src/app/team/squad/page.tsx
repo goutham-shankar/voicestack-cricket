@@ -48,12 +48,12 @@ export default async function TeamSquadPage() {
         <StatCard label="Total Players" value={players.length} icon={Users2} />
         <StatCard
           label="Total Spent"
-          value={`₹${totalSpent.toLocaleString("en-IN")}`}
+          value={`${totalSpent.toLocaleString("en-IN")}`}
           icon={Wallet}
         />
         <StatCard
           label="Avg. Price"
-          value={`₹${avgPrice.toLocaleString("en-IN")}`}
+          value={`${avgPrice.toLocaleString("en-IN")}`}
           icon={Wallet}
           accent="gold"
         />
@@ -108,7 +108,7 @@ export default async function TeamSquadPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Purchase Price</span>
                     <span className="font-semibold tabular-money text-primary">
-                      ₹{(player.soldPrice ?? 0).toLocaleString("en-IN")}
+                      {(player.soldPrice ?? 0).toLocaleString("en-IN")}
                     </span>
                   </div>
                   {tags.length > 0 && (

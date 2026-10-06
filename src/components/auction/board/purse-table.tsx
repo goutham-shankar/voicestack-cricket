@@ -96,10 +96,10 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
                 </th>
 
                 <td>
-                  <span className="big">₹{fmt(board?.left ?? team.remaining)}</span>
+                  <span className="big">{fmt(board?.left ?? team.remaining)}</span>
                   {board && board.shortfall > 0 && (
                     <span className="sub short">
-                      ₹{fmt(board.shortfall)} short
+                      {fmt(board.shortfall)} short
                     </span>
                   )}
                 </td>
@@ -107,7 +107,7 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
                 <td>
                   {board && board.locked > 0 ? (
                     <>
-                      <span className="big">₹{fmt(board.locked)}</span>
+                      <span className="big">{fmt(board.locked)}</span>
                       <span className="sub">
                         {board.lockedParts
                           .map((part) => {
@@ -115,7 +115,7 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
                               state.categories.find(
                                 (c) => c._id === part.categoryId
                               )?.name ?? "—";
-                            return `${name} ₹${fmt(part.amount)}`;
+                            return `${name} ${fmt(part.amount)}`;
                           })
                           .join(", ")}
                       </span>
@@ -127,13 +127,13 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
 
                 <td>
                   <span className="big">
-                    ₹{fmt(board?.spendable ?? team.remaining)}
+                    {fmt(board?.spendable ?? team.remaining)}
                   </span>
                 </td>
 
                 <td className="maxcol">
                   {limit?.ok ? (
-                    <span className="big">₹{fmt(limit.max)}</span>
+                    <span className="big">{fmt(limit.max)}</span>
                   ) : (
                     <span className="sub">{limit?.reason ?? "—"}</span>
                   )}
@@ -216,7 +216,7 @@ function TeamDetail({
         limit.ok && limit.fills && roundName === category.name ? 1 : 0;
       const n = stillNeeded - fillsThis;
       return n > 0
-        ? `${n} ${category.name} at ₹${fmt(category.defaultBasePrice)}`
+        ? `${n} ${category.name} at ${fmt(category.defaultBasePrice)}`
         : null;
     })
     .filter(Boolean) as string[];
@@ -231,26 +231,26 @@ function TeamDetail({
           <div className="calc">
             <div className="term">
               <span className="sub">Spendable now</span>
-              <span className="big">₹{fmt(board.spendable)}</span>
+              <span className="big">{fmt(board.spendable)}</span>
             </div>
             <span className="op" aria-hidden="true">
               −
             </span>
             <div className="term">
               <span className="sub">Kept back</span>
-              <span className="big">₹{fmt(limit.holdOpen)}</span>
+              <span className="big">{fmt(limit.holdOpen)}</span>
             </div>
             <span className="op" aria-hidden="true">
               =
             </span>
             <div className="term final">
               <span className="sub">Max bid</span>
-              <span className="big">₹{fmt(limit.max)}</span>
+              <span className="big">{fmt(limit.max)}</span>
             </div>
           </div>
           <p className="note">
             {board.locked > 0 &&
-              `Spendable now is the ₹${fmt(board.left)} purse left minus ₹${fmt(
+              `Spendable now is the ${fmt(board.left)} purse left minus ${fmt(
                 board.locked
               )} locked for rounds that have not opened. `}
             {keep.length
@@ -269,7 +269,7 @@ function TeamDetail({
               <span>
                 {player.name} <span className="tag">{player.category ?? "—"}</span>
               </span>
-              <span>₹{fmt(player.price)}</span>
+              <span>{fmt(player.price)}</span>
             </li>
           ))}
         </ul>

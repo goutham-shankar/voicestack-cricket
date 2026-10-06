@@ -3,7 +3,6 @@ import { collection, type Doc } from "@/lib/firestore";
 export type AuctionSettings = {
   defaultWalletBudget: number;
   defaultMaxSquadSize: number;
-  timerSeconds: number;
   /** Smallest squad every team must end up with, captains included when they count. */
   minSquadSize: number;
   /** How much each bid must rise by. */
@@ -20,7 +19,6 @@ export const AuctionSettingsStore = collection<AuctionSettings>({
   defaults: () => ({
     defaultWalletBudget: 100000,
     defaultMaxSquadSize: 12,
-    timerSeconds: 30,
     minSquadSize: 12,
     bidIncrement: 500,
     captainsCount: true,

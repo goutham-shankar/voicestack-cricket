@@ -4,7 +4,6 @@ import { moneySchema } from "@/lib/validators/money";
 export const settingsSchema = z.object({
   defaultWalletBudget: moneySchema.min(0),
   defaultMaxSquadSize: z.number().int().min(1),
-  timerSeconds: z.number().int().min(5).max(300),
   /** Smallest squad every team must reach, captains included when they count. */
   minSquadSize: z.number().int().min(1, "Minimum squad must be at least 1").max(80),
   /** How much each bid must rise by. */

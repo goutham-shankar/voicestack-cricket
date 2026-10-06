@@ -241,7 +241,7 @@ export function PlayerFormDialog({
                 <Label htmlFor="override-toggle">Override Base Price</Label>
                 <p className="text-xs text-muted-foreground">
                   {selectedCategory
-                    ? `Category default: ₹${selectedCategory.defaultBasePrice.toLocaleString("en-IN")}`
+                    ? `Category default: ${selectedCategory.defaultBasePrice.toLocaleString("en-IN")}`
                     : "Choose a category to see its default price"}
                 </p>
               </div>

@@ -20,9 +20,6 @@ async function main() {
   await AuctionStateStore.updateById("global", {
     status: "IDLE",
     currentPlayerId: null,
-    timerEndsAt: null,
-    timerRemainingMs: null,
-    timerPaused: false,
   });
 
   console.log("Cleanup complete:");

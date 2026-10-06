@@ -74,7 +74,7 @@ export function TeamsTable({ initialTeams }: { initialTeams: TeamRecord[] }) {
                     </div>
                   </TableCell>
                   <TableCell className="tabular-money">
-                    ₹{team.initialBudget.toLocaleString("en-IN")}
+                    {team.initialBudget.toLocaleString("en-IN")}
                   </TableCell>
                   <TableCell>{team.maxSquadSize}</TableCell>
                   <TableCell>

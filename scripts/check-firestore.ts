@@ -31,10 +31,6 @@ import {
   markUnsold,
   setRound,
   requeuePlayer,
-  pauseTimer,
-  resumeTimer,
-  setTimerEnabled,
-  resetTimer,
   setShowcase,
   getAllTeamsSummary,
   getTeamFinancials,
@@ -70,7 +66,7 @@ async function main() {
   const settings = await getSingleton(AuctionSettingsStore);
   eq("seeded with defaults", settings.bidIncrement, 500);
   eq("singleton id", settings._id, "global");
-  await AuctionSettingsStore.updateById("global", { minSquadSize: 3, bidIncrement: 100, timerSeconds: 30 });
+  await AuctionSettingsStore.updateById("global", { minSquadSize: 3, bidIncrement: 100 });
   eq("update sticks", (await getSingleton(AuctionSettingsStore)).minSquadSize, 3);
   eq("re-reading does not duplicate", await AuctionSettingsStore.count(), 1);
 
@@ -132,7 +128,6 @@ async function main() {
   eq("lot counter", state.auctionState.lotNo, 1);
   eq("lot base price", state.lotBasePrice, 1000);
   eq("minimum next bid", state.minNextBid, 1000);
-  check("timer set", state.auctionState.timerEndsAt instanceof Date || typeof state.auctionState.timerEndsAt === "object");
   eq("player marked live", (await Players.findById(first._id))?.status, "LIVE");
 
   let secondStart = "";
@@ -161,15 +156,6 @@ async function main() {
   state = await undoLastBid();
   eq("undo removes the last bid", state.auctionState.bids.length, 1);
   state = await placeBid(beta._id, 2000);
-
-  console.log("\n— timer controls —");
-  state = await pauseTimer();
-  eq("paused", state.auctionState.timerPaused, true);
-  check("remaining captured", (state.auctionState.timerRemainingMs ?? 0) > 0);
-  state = await resumeTimer();
-  eq("resumed", state.auctionState.timerPaused, false);
-  state = await resetTimer();
-  check("reset pushes the deadline out", state.auctionState.timerEndsAt != null);
 
   console.log("\n— the hammer —");
   const sold = await sellToLeadingBid();
@@ -212,19 +198,17 @@ async function main() {
   const board = "board" in alphaRow ? alphaRow.board : null;
   check("engine limits present", board?.limit.ok === true, board?.limit);
 
-  console.log("\n— showcase and timer toggle —");
+  console.log("\n— showcase —");
   eq("showcase on", (await setShowcase(true)).auctionState.showcase, true);
   eq("showcase off", (await setShowcase(false)).auctionState.showcase, false);
-  eq("timer disabled", (await setTimerEnabled(false)).auctionState.timerEnabled, false);
-  eq("timer enabled", (await setTimerEnabled(true)).auctionState.timerEnabled, true);
 
-  console.log("\n— expired lot auto-resolves —");
-  await setTimerEnabled(true);
+  console.log("\n— a lot stays live until it is settled —");
   await startAuction(second._id);
-  await AuctionStateStore.updateById("global", { timerEndsAt: new Date(Date.now() - 1000) });
-  const afterExpiry = await getFullState();
-  eq("lot closed by the timer", afterExpiry.auctionState.status, "IDLE");
-  eq("and left unsold", (await Players.findById(second._id))?.status, "UNSOLD");
+  const stillLive = await getFullState();
+  eq("still live after a read", stillLive.auctionState.status, "LIVE");
+  eq("player still live", (await Players.findById(second._id))?.status, "LIVE");
+  await markUnsold();
+  eq("only closes when told to", (await Players.findById(second._id))?.status, "UNSOLD");
 
   console.log("\n— orphan repair —");
   await Players.updateById(third._id, { status: "LIVE" });

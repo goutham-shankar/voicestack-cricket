@@ -94,11 +94,11 @@ export function TeamLedgerDialog({
                         : "tabular-money font-semibold text-sold"
                     }
                   >
-                    {txn.amount < 0 ? "-" : "+"}₹
+                    {txn.amount < 0 ? "-" : "+"}
                     {Math.abs(txn.amount).toLocaleString("en-IN")}
                   </p>
                   <p className="tabular-money text-xs text-muted-foreground">
-                    ₹{txn.balanceAfter.toLocaleString("en-IN")}
+                    {txn.balanceAfter.toLocaleString("en-IN")}
                   </p>
                 </div>
               </div>

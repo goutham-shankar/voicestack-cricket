@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/firebase";
-import { getSingleton } from "@/lib/firestore";
+import { getSingleton, onFirestoreWrite } from "@/lib/firestore";
 import { ServiceError } from "@/lib/services/service-error";
 import {
   AuctionStateStore,
@@ -34,20 +34,7 @@ import {
   recordTransaction,
 } from "@/lib/services/wallet-ledger";
 
-type ResolveResult =
-  | {
-      status: "SOLD";
-      playerName: string;
-      teamName: string;
-      price: number;
-    }
-  | {
-      status: "UNSOLD";
-      playerName: string;
-    };
-
 type RuntimeSettings = {
-  timerSeconds: number;
   minSquadSize: number;
   bidIncrement: number;
   captainsCount: boolean;
@@ -77,7 +64,52 @@ export type AuctionSnapshot = {
   playersById: Map<string, PlayerDoc>;
 };
 
+/**
+ * A snapshot costs ~112 document reads, and every client that cannot hold a
+ * socket polls for one every 1.5s. Two guards keep that affordable:
+ *
+ *  - in-flight coalescing, so simultaneous callers share one read rather than
+ *    each issuing their own;
+ *  - a very short time window, well inside the poll interval, so a burst of
+ *    polls costs one read instead of one each.
+ *
+ * Any write invalidates it immediately, so a mutation never reads back the
+ * state it just replaced.
+ */
+const SNAPSHOT_TTL_MS = 1000;
+
+let cachedSnapshot: { snap: AuctionSnapshot; at: number } | null = null;
+let inFlightSnapshot: Promise<AuctionSnapshot> | null = null;
+
+/** Called after every write, so the next read rebuilds from the database. */
+export function invalidateSnapshot() {
+  cachedSnapshot = null;
+  inFlightSnapshot = null;
+}
+
+// Covers writes made anywhere in the app, not just through this service —
+// an admin editing a player must show up on the board immediately.
+onFirestoreWrite(invalidateSnapshot);
+
 export async function loadSnapshot(): Promise<AuctionSnapshot> {
+  if (cachedSnapshot && Date.now() - cachedSnapshot.at < SNAPSHOT_TTL_MS) {
+    return cachedSnapshot.snap;
+  }
+  if (inFlightSnapshot) return inFlightSnapshot;
+
+  inFlightSnapshot = readSnapshot()
+    .then((snap) => {
+      cachedSnapshot = { snap, at: Date.now() };
+      return snap;
+    })
+    .finally(() => {
+      inFlightSnapshot = null;
+    });
+
+  return inFlightSnapshot;
+}
+
+async function readSnapshot(): Promise<AuctionSnapshot> {
   const [state, settingsDoc, categories, tags, teams, players, ledgerByTeam] =
     await Promise.all([
       getSingleton(AuctionStateStore),
@@ -92,7 +124,6 @@ export async function loadSnapshot(): Promise<AuctionSnapshot> {
   return {
     state,
     settings: {
-      timerSeconds: settingsDoc.timerSeconds ?? 30,
       minSquadSize: settingsDoc.minSquadSize ?? 12,
       bidIncrement: settingsDoc.bidIncrement ?? 500,
       captainsCount: settingsDoc.captainsCount ?? true,
@@ -106,17 +137,6 @@ export async function loadSnapshot(): Promise<AuctionSnapshot> {
     tagsById: new Map(tags.map((t) => [t._id, t])),
     teamsById: new Map(teams.map((t) => [t._id, t])),
     playersById: new Map(players.map((p) => [p._id, p])),
-  };
-}
-
-async function getSettings(snap?: AuctionSnapshot): Promise<RuntimeSettings> {
-  if (snap) return snap.settings;
-  const settings = await getSingleton(AuctionSettingsStore);
-  return {
-    timerSeconds: settings.timerSeconds ?? 30,
-    minSquadSize: settings.minSquadSize ?? 12,
-    bidIncrement: settings.bidIncrement ?? 500,
-    captainsCount: settings.captainsCount ?? true,
   };
 }
 
@@ -320,6 +340,7 @@ async function repairOrphanLivePlayers(
     orphans.map((player) => Players.updateById(player._id, { status: "PENDING" }))
   );
   for (const orphan of orphans) orphan.status = "PENDING";
+  invalidateSnapshot();
 }
 
 /** A fresh key each time, so the board replays the stamp exactly once. */
@@ -348,9 +369,6 @@ async function clearLiveAuctionState(
     const patch = {
       status: "IDLE" as const,
       currentPlayerId: null,
-      timerEndsAt: null,
-      timerRemainingMs: null,
-      timerPaused: false,
       bids: [],
       ...(lastResult ? { lastResult } : {}),
       updatedAt: new Date(),
@@ -394,10 +412,6 @@ function decorateStateForBoard(snap: AuctionSnapshot, ctx: EngineContext) {
 
   return {
     status: state.status,
-    timerEnabled: state.timerEnabled ?? true,
-    timerEndsAt: state.timerEndsAt ?? null,
-    timerRemainingMs: state.timerRemainingMs ?? null,
-    timerPaused: state.timerPaused ?? false,
     showcase: state.showcase ?? false,
     openCategoryIds: ctx.categories.filter((c) => open.has(c.id)).map((c) => c.id),
     currentCategoryId: ctx.input.currentCategoryId,
@@ -443,6 +457,8 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
     const livePlayer = snap.playersById.get(state.currentPlayerId);
     if (!livePlayer || livePlayer.status === "SOLD" || livePlayer.status === "UNSOLD") {
       await clearLiveAuctionState(state.currentPlayerId);
+      // Re-read, or the recursion would see the same stale snapshot forever.
+      invalidateSnapshot();
       return buildFullState();
     }
   }
@@ -585,44 +601,14 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
   };
 }
 
-type BuiltAuctionState = Awaited<ReturnType<typeof buildFullState>>;
-
-/**
- * If the live lot's timer has expired without an offline sale being recorded
- * yet, auto-mark it unsold so the room never stalls. Safe to call from reads
- * and writes; returns null when nothing changed.
- */
-export async function resolveExpiredLot(snap?: AuctionSnapshot): Promise<{
-  state: BuiltAuctionState;
-  result: ResolveResult;
-} | null> {
-  const state = snap ? snap.state : await getAuctionState();
-
-  if (state.status !== "LIVE" || !state.currentPlayerId) return null;
-  if (!state.timerEnabled || state.timerPaused) return null;
-  if (!state.timerEndsAt || state.timerEndsAt.getTime() > Date.now()) return null;
-
-  return markUnsold(snap);
-}
-
-export async function getFullState(options?: { resolveExpired?: boolean }) {
-  // One snapshot answers both the expiry check and the state build.
-  const snap = await loadSnapshot();
-
-  if (options?.resolveExpired !== false) {
-    const resolved = await resolveExpiredLot(snap);
-    if (resolved) return resolved.state;
-  }
-
-  return buildFullState(snap);
+export async function getFullState() {
+  return buildFullState(await loadSnapshot());
 }
 
 export async function startAuction(playerId: string) {
   assertId(playerId, "player id");
 
-  let snap = await loadSnapshot();
-  const expired = await resolveExpiredLot(snap);
-  if (expired) snap = await loadSnapshot();
+  const snap = await loadSnapshot();
 
   const player = snap.playersById.get(playerId);
   if (!player) throw new ServiceError("Player not found", 404);
@@ -651,8 +637,6 @@ export async function startAuction(playerId: string) {
     }
   }
 
-  const { timerSeconds } = snap.settings;
-
   // Claim the player first so two starts cannot put different players LIVE.
   const claimed = await claimPlayerStatus(player._id, ["PENDING", "UNSOLD"], {
     status: "LIVE",
@@ -668,13 +652,9 @@ export async function startAuction(playerId: string) {
     const state = AuctionStateStore.hydrate(snapshot);
     if (state.status !== "IDLE") return null;
 
-    const timerEnabled = state.timerEnabled ?? true;
     txn.update(stateRef(), {
       status: "LIVE",
       currentPlayerId: player._id,
-      timerPaused: false,
-      timerRemainingMs: null,
-      timerEndsAt: timerEnabled ? new Date(Date.now() + timerSeconds * 1000) : null,
       bids: [],
       lastResult: null,
       lotNo: (state.lotNo ?? 0) + 1,
@@ -690,7 +670,8 @@ export async function startAuction(playerId: string) {
 
   await repairOrphanLivePlayers(snap, player._id);
 
-  return getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  return getFullState();
 }
 
 /**
@@ -714,92 +695,6 @@ async function claimPlayerStatus(
     txn.update(docRef, { ...patch, updatedAt: new Date() });
     return { ...player, ...patch } as PlayerDoc;
   });
-}
-
-export async function pauseTimer() {
-  const state = await getAuctionState();
-  if (state.status !== "LIVE") throw new ServiceError("No auction is live");
-  if (!state.timerEnabled) throw new ServiceError("Timer is disabled");
-  if (state.timerPaused) return getFullState({ resolveExpired: false });
-
-  const remaining = state.timerEndsAt
-    ? state.timerEndsAt.getTime() - Date.now()
-    : 0;
-
-  await AuctionStateStore.updateById("global", {
-    timerRemainingMs: Math.max(remaining, 0),
-    timerEndsAt: null,
-    timerPaused: true,
-  });
-
-  return getFullState({ resolveExpired: false });
-}
-
-export async function resumeTimer() {
-  const state = await getAuctionState();
-  if (state.status !== "LIVE") throw new ServiceError("No auction is live");
-  if (!state.timerPaused) return getFullState({ resolveExpired: false });
-
-  const remaining = state.timerRemainingMs ?? 0;
-  if (remaining <= 0) {
-    await AuctionStateStore.updateById("global", {
-      timerPaused: false,
-      timerRemainingMs: null,
-      timerEndsAt: new Date(),
-    });
-    const resolved = await resolveExpiredLot();
-    if (resolved) return resolved.state;
-  }
-
-  await AuctionStateStore.updateById("global", {
-    timerEndsAt: new Date(Date.now() + remaining),
-    timerRemainingMs: null,
-    timerPaused: false,
-  });
-
-  return getFullState({ resolveExpired: false });
-}
-
-export async function setTimerEnabled(enabled: boolean) {
-  const state = await getAuctionState();
-
-  if (!enabled) {
-    await AuctionStateStore.updateById("global", {
-      timerEnabled: false,
-      timerEndsAt: null,
-      timerRemainingMs: null,
-      timerPaused: false,
-    });
-  } else if (state.status === "LIVE" && !state.timerPaused) {
-    const { timerSeconds } = await getSettings();
-    await AuctionStateStore.updateById("global", {
-      timerEnabled: true,
-      timerEndsAt: new Date(Date.now() + timerSeconds * 1000),
-    });
-  } else {
-    await AuctionStateStore.updateById("global", { timerEnabled: true });
-  }
-
-  return getFullState({ resolveExpired: false });
-}
-
-/** Restarts the pacing timer for the current lot — there is no bid to reset anymore. */
-export async function resetTimer() {
-  const state = await getAuctionState();
-  if (state.status !== "LIVE" || !state.currentPlayerId) {
-    throw new ServiceError("No auction is live");
-  }
-
-  const { timerSeconds } = await getSettings();
-  await AuctionStateStore.updateById("global", {
-    timerPaused: false,
-    timerRemainingMs: null,
-    timerEndsAt: state.timerEnabled
-      ? new Date(Date.now() + timerSeconds * 1000)
-      : null,
-  });
-
-  return getFullState({ resolveExpired: false });
 }
 
 /**
@@ -863,16 +758,14 @@ export async function sellPlayer(
       await AuctionStateStore.updateById("global", {
         status: "IDLE",
         currentPlayerId: null,
-        timerEndsAt: null,
-        timerRemainingMs: null,
-        timerPaused: false,
         bids: [],
         lastResult: soldResult,
       });
     }
   }
 
-  const fullState = await getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  const fullState = await getFullState();
   return {
     state: fullState,
     result: {
@@ -885,8 +778,8 @@ export async function sellPlayer(
   };
 }
 
-export async function markUnsold(snapshot?: AuctionSnapshot) {
-  const snap = snapshot ?? (await loadSnapshot());
+export async function markUnsold() {
+  const snap = await loadSnapshot();
   const state = snap.state;
   if (state.status !== "LIVE" || !state.currentPlayerId) {
     throw new ServiceError("No player is currently live");
@@ -912,7 +805,8 @@ export async function markUnsold(snapshot?: AuctionSnapshot) {
     key: resultKey("UNSOLD", player._id),
   });
 
-  const fullState = await getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  const fullState = await getFullState();
   return {
     state: fullState,
     result: { status: "UNSOLD" as const, playerName: player.name },
@@ -923,6 +817,7 @@ export async function markUnsold(snapshot?: AuctionSnapshot) {
 export async function setShowcase(enabled: boolean) {
   await getAuctionState();
   await AuctionStateStore.updateById("global", { showcase: enabled });
+  invalidateSnapshot();
   return buildFullState();
 }
 
@@ -991,10 +886,12 @@ export async function placeBid(teamId: string, amount: number) {
   });
 
   if (!appended) {
+    invalidateSnapshot();
     throw new ServiceError("Another bid landed first — check the board and try again");
   }
 
-  return getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  return getFullState();
 }
 
 /** Takes back the most recent bid. */
@@ -1022,7 +919,8 @@ export async function undoLastBid() {
     });
   });
 
-  return getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  return getFullState();
 }
 
 /**
@@ -1065,7 +963,8 @@ export async function setRound(categoryId: string) {
     lastResult: null,
   });
 
-  return getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  return getFullState();
 }
 
 /** Puts an unsold player back into the waiting pool. */
@@ -1081,5 +980,6 @@ export async function requeuePlayer(playerId: string) {
     throw new ServiceError("That player is not in the unsold list");
   }
 
-  return getFullState({ resolveExpired: false });
+  invalidateSnapshot();
+  return getFullState();
 }

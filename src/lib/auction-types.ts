@@ -95,10 +95,6 @@ export type LastResultDTO = {
 export type AuctionStateDTO = {
   status: "IDLE" | "LIVE";
   currentPlayerId: PlayerRef | null;
-  timerEnabled: boolean;
-  timerEndsAt: string | null;
-  timerRemainingMs: number | null;
-  timerPaused: boolean;
   showcase?: boolean;
   /** Bids on the current lot, oldest first; the last is the standing bid. */
   bids: BidEntryDTO[];
@@ -140,7 +136,6 @@ export type AuctionStats = {
 };
 
 export type AuctionRuntimeSettings = {
-  timerSeconds: number;
   /** Smallest squad every team must reach, captains included when they count. */
   minSquadSize: number;
   /** How much each bid must rise by. */

@@ -44,7 +44,7 @@ import type { FullAuctionState } from "@/lib/auction-types";
 
 async function postJSON(url: string, body?: unknown) {
   const res = await fetch(url, {
-    method: url.includes("/timer") ? "PATCH" : "POST",
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -61,7 +61,7 @@ export function ControlPanel({
   canSell,
 }: {
   state: FullAuctionState;
-  /** Start player, pause/resume/reset, toggle timer. */
+  /** Bring a player up for auction. */
   canControl: boolean;
   /** Record the offline sale result or mark unsold. */
   canSell: boolean;
@@ -173,7 +173,7 @@ export function ControlPanel({
                           {p.categoryId?.name ?? "—"}
                         </TableCell>
                         <TableCell className="tabular-money text-right text-sm font-medium">
-                          ₹{base.toLocaleString("en-IN")}
+                          {base.toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -260,7 +260,7 @@ export function ControlPanel({
                 <SelectContent>
                   {state.teams.map((t) => (
                     <SelectItem key={t._id} value={t._id}>
-                      {t.name} · ₹{t.remaining.toLocaleString("en-IN")} left
+                      {t.name} · {t.remaining.toLocaleString("en-IN")} left
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -268,7 +268,7 @@ export function ControlPanel({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="sell-price">Sold Price (₹)</Label>
+              <Label htmlFor="sell-price">Sold Price</Label>
               <Input
                 id="sell-price"
                 type="number"
@@ -281,7 +281,7 @@ export function ControlPanel({
 
           {sellTeam && priceValid && priceValue > sellTeam.remaining && (
             <p className="text-xs text-destructive">
-              Exceeds {sellTeam.name}&apos;s remaining wallet of ₹
+              Exceeds {sellTeam.name}&apos;s remaining wallet of
               {sellTeam.remaining.toLocaleString("en-IN")}.
             </p>
           )}

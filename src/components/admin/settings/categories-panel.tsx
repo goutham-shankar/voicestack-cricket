@@ -72,7 +72,7 @@ export function CategoriesPanel({
                 <TableRow key={cat._id}>
                   <TableCell className="font-medium">{cat.name}</TableCell>
                   <TableCell className="tabular-money">
-                    ₹{cat.defaultBasePrice.toLocaleString("en-IN")}
+                    {cat.defaultBasePrice.toLocaleString("en-IN")}
                   </TableCell>
                   <TableCell>{cat.order}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">

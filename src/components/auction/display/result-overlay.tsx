@@ -68,7 +68,7 @@ function CountUp({ to, delay = 0 }: { to: number; delay?: number }) {
     };
   }, [to, delay]);
 
-  return <>₹{value.toLocaleString("en-IN")}</>;
+  return <>{value.toLocaleString("en-IN")}</>;
 }
 
 export type WinningTeam = {
@@ -240,7 +240,7 @@ export function ResultOverlay({
             className="tabular-money mt-6 font-black tracking-tighter text-gold"
             style={{ fontSize: "clamp(2.5rem, 6vw, 5.5rem)" }}
           >
-            {result.playerName} — ₹{result.price.toLocaleString("en-IN")}
+            {result.playerName} — {result.price.toLocaleString("en-IN")}
           </motion.p>
         ) : (
           <>

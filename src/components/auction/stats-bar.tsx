@@ -11,12 +11,12 @@ export function StatsBar({ stats }: { stats: AuctionStats }) {
       <StatCard label="Remaining" value={stats.remaining} icon={Gavel} accent="gold" />
       <StatCard
         label="Total Spent"
-        value={`₹${stats.totalSpent.toLocaleString("en-IN")}`}
+        value={`${stats.totalSpent.toLocaleString("en-IN")}`}
         icon={Wallet}
       />
       <StatCard
         label="Highest Sale"
-        value={`₹${stats.highestSale.toLocaleString("en-IN")}`}
+        value={`${stats.highestSale.toLocaleString("en-IN")}`}
         icon={TrendingUp}
         accent="gold"
       />

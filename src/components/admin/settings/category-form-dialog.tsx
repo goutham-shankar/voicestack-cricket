@@ -132,7 +132,7 @@ export function CategoryFormDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="cat-price">Default Base Price (₹)</Label>
+            <Label htmlFor="cat-price">Default Base Price</Label>
             <Input
               id="cat-price"
               type="number"

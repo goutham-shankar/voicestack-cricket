@@ -24,10 +24,6 @@ export type StoredLastResult = {
 export type AuctionState = {
   status: AuctionStatus;
   currentPlayerId: string | null;
-  timerEnabled: boolean;
-  timerEndsAt: Date | null;
-  timerRemainingMs: number | null;
-  timerPaused: boolean;
   /** Final-squads showcase on the display board, driven by the admin. */
   showcase: boolean;
   /** Categories whose round has been opened. The first round is always open. */
@@ -49,10 +45,6 @@ export const AuctionStateStore = collection<AuctionState>({
   defaults: () => ({
     status: "IDLE",
     currentPlayerId: null,
-    timerEnabled: true,
-    timerEndsAt: null,
-    timerRemainingMs: null,
-    timerPaused: false,
     showcase: false,
     openCategoryIds: [],
     currentCategoryId: null,

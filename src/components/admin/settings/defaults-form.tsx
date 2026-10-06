@@ -15,7 +15,6 @@ import { Loader2, Save } from "lucide-react";
 type SettingsDoc = {
   defaultWalletBudget: number;
   defaultMaxSquadSize: number;
-  timerSeconds: number;
   // Added with the auction board; older documents will not have them.
   minSquadSize?: number;
   bidIncrement?: number;
@@ -35,7 +34,6 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
     defaultValues: {
       defaultWalletBudget: initialSettings.defaultWalletBudget,
       defaultMaxSquadSize: initialSettings.defaultMaxSquadSize,
-      timerSeconds: initialSettings.timerSeconds,
       minSquadSize:
         initialSettings.minSquadSize ?? initialSettings.defaultMaxSquadSize,
       bidIncrement: initialSettings.bidIncrement ?? 500,
@@ -73,7 +71,7 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
           className="grid grid-cols-1 gap-4 sm:grid-cols-3"
         >
           <div className="space-y-2">
-            <Label htmlFor="defaultWalletBudget">Default Team Wallet (₹)</Label>
+            <Label htmlFor="defaultWalletBudget">Default Team Wallet</Label>
             <Input
               id="defaultWalletBudget"
               type="number"
@@ -101,18 +99,6 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="timerSeconds">Lot Timer (seconds)</Label>
-            <Input
-              id="timerSeconds"
-              type="number"
-              {...register("timerSeconds", { valueAsNumber: true })}
-            />
-            {errors.timerSeconds && (
-              <p className="text-sm text-destructive">{errors.timerSeconds.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor="minSquadSize">Minimum Squad Size</Label>
             <Input
               id="minSquadSize"
@@ -131,7 +117,7 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="bidIncrement">Bid Increment (₹)</Label>
+            <Label htmlFor="bidIncrement">Bid Increment</Label>
             <Input
               id="bidIncrement"
               type="number"

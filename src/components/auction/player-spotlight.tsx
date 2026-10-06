@@ -40,7 +40,7 @@ export function PlayerSpotlight({ player }: { player: PlayerRef | null }) {
           Base Price
         </p>
         <p className="text-xl font-bold tabular-money text-primary">
-          ₹{basePrice.toLocaleString("en-IN")}
+          {basePrice.toLocaleString("en-IN")}
         </p>
       </div>
 

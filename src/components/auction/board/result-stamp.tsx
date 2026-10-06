@@ -27,7 +27,7 @@ export function ResultStamp({
         {sold && (
           <div className="rto" style={{ ["--pc" as string]: color }}>
             <span className="dot" aria-hidden="true" />
-            {result.teamName} for ₹{fmt(result.amount)}
+            {result.teamName} for {fmt(result.amount)}
           </div>
         )}
       </div>

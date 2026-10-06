@@ -41,7 +41,7 @@ export function TeamPaddles({
         } else if (!limit.ok) {
           sub = shortReason(limit.code as BidRefusalCode);
         } else {
-          sub = `Max ₹${fmt(limit.max)}`;
+          sub = `Max ${fmt(limit.max)}`;
           enabled = nextBid >= minNext - 1e-9 && nextBid <= limit.max + 1e-9;
         }
 

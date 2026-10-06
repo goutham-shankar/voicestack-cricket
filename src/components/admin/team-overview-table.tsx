@@ -47,10 +47,10 @@ export function TeamOverviewTable({ teams }: { teams: TeamSummary[] }) {
               {team.squadCount}/{team.maxSquadSize}
             </TableCell>
             <TableCell className="tabular-money">
-              ₹{team.spent.toLocaleString("en-IN")}
+              {team.spent.toLocaleString("en-IN")}
             </TableCell>
             <TableCell className="tabular-money font-medium text-primary">
-              ₹{team.remaining.toLocaleString("en-IN")}
+              {team.remaining.toLocaleString("en-IN")}
             </TableCell>
             <TableCell className="tabular-nums">{team.slotsRemaining}</TableCell>
           </TableRow>

@@ -22,7 +22,7 @@ export async function requireAdmin() {
   return requireRole(["admin"]);
 }
 
-/** Start / pause / resume / reset / timer — admin only. */
+/** Bringing a player up for auction — admin only. */
 export async function requireAuctionControl() {
   return requireRole(["admin"]);
 }

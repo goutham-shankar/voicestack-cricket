@@ -81,6 +81,23 @@ function sortDocs<T>(rows: Doc<T>[], sort: SortSpec<T>): Doc<T>[] {
   });
 }
 
+/**
+ * Anything caching derived state needs to know when the database changes.
+ * Every write below notifies, so a cache can never outlive its data — the
+ * auction service's snapshot subscribes to this.
+ */
+const writeListeners = new Set<() => void>();
+
+export function onFirestoreWrite(listener: () => void): () => void {
+  writeListeners.add(listener);
+  return () => writeListeners.delete(listener);
+}
+
+/** Also called directly by code that writes through a raw transaction. */
+export function notifyFirestoreWrite() {
+  for (const listener of writeListeners) listener();
+}
+
 export type CollectionDef<T> = {
   name: string;
   /** Applied to every created document, so reads never see missing fields. */
@@ -195,6 +212,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
         await docRef.create(payload);
       }
 
+      notifyFirestoreWrite();
       return { ...(fromFirestore(payload) as T & Timestamps), _id: docRef.id };
     },
 
@@ -215,6 +233,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
       }
 
       await batch.commit();
+      notifyFirestoreWrite();
       return created;
     },
 
@@ -228,6 +247,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
         const snapshot = await docRef.get();
         if (!snapshot.exists) return null;
         await docRef.update(payload);
+        notifyFirestoreWrite();
         return {
           ...hydrate(snapshot),
           ...(fromFirestore(payload) as Partial<T>),
@@ -242,6 +262,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
         return { ...hydrate(snapshot), ...(fromFirestore(payload) as Partial<T>) };
       });
 
+      notifyFirestoreWrite();
       return updated as Doc<T> | null;
     },
 
@@ -258,6 +279,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
         batch.update(doc.ref, { ...patch, updatedAt: Timestamp.now() });
       }
       await batch.commit();
+      notifyFirestoreWrite();
       return snapshot.size;
     },
 
@@ -266,6 +288,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
       const snapshot = await docRef.get();
       if (!snapshot.exists) return false;
       await docRef.delete();
+      notifyFirestoreWrite();
       return true;
     },
 
@@ -276,6 +299,7 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
       const batch = getDb().batch();
       for (const doc of snapshot.docs) batch.delete(doc.ref);
       await batch.commit();
+      notifyFirestoreWrite();
       return snapshot.size;
     },
   };

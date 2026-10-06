@@ -9,9 +9,8 @@ import {
 import type { AuctionResult, FullAuctionState } from "@/lib/auction-types";
 
 // How often we re-fetch state when sockets are unavailable (serverless hosts).
-// /api/auction/state also resolves expired lots, so polling keeps the timer
-// honest the same way a socket broadcast would. A backgrounded tab backs off
-// instead of stopping, so it is never more than one interval out of date.
+// A backgrounded tab backs off instead of stopping, so it is never more than
+// one interval out of date.
 const POLL_INTERVAL_MS = 1500;
 const HIDDEN_POLL_INTERVAL_MS = 10000;
 

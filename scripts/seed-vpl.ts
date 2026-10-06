@@ -1,7 +1,7 @@
 /**
  * Seeds the VoiceStack Premier League from the exported player sheets.
  *
- *   npx tsx scripts/seed-vpl.ts "<Male.csv>" "<Female.csv>" [--force]
+ *   npx tsx scripts/seed-vpl.ts "<Male.csv>" "<Female.csv>" [--force] [--test-player]
  *
  * Rows flagged "Captain" in the base-price column are not auction lots — they
  * become the captains on their team, matched to it by first name. Everyone
@@ -29,11 +29,17 @@ import { recordTransaction } from "../src/lib/services/wallet-ledger";
 
 // ------------------------------------------------------------------ config
 
-const INITIAL_BUDGET = 1000; // lakhs, matching the sheet's "Base Price in Lakhs"
+/**
+ * Money is stored in rupees, so the display board's Cr/L formatting reads
+ * correctly. The sheet quotes base prices in lakhs, so each is multiplied up.
+ */
+const LAKH = 100_000;
+const CRORE = 100 * LAKH;
+
+const INITIAL_BUDGET = 100 * CRORE; // 100 Cr per team
 const MAX_SQUAD_SIZE = 19; // captains included
 const MIN_SQUAD_SIZE = 12; // raise once the full roster is loaded
-const BID_INCREMENT = 5;
-const TIMER_SECONDS = 30;
+const BID_INCREMENT = 5 * LAKH;
 
 /**
  * Each team is named "<male captain> & <female captain>" by first name; the
@@ -71,6 +77,9 @@ const SKILL_COLORS: Record<string, string> = {
  * Admin -> Configuration -> Player Categories before those rounds open.
  */
 const SPECIAL_CATEGORIES = ["Specialist", "Power Player"];
+
+/** Everyone with a price from the sheet is auctioned in this single round. */
+const GENERAL_ROUND = "General";
 
 // -------------------------------------------------------------------- csv
 
@@ -113,10 +122,6 @@ function primaryRole(raw: string): PlayerRole {
     if (part.startsWith("bowl")) return "Bowler";
   }
   return "Batsman";
-}
-
-function categoryNameFor(basePrice: string): string {
-  return /^\d+$/.test(basePrice) ? `${basePrice} Lakhs` : basePrice;
 }
 
 // ------------------------------------------------------------------- main
@@ -164,8 +169,10 @@ function findCaptain(captains: Row[], firstName: string, team: string, which: st
 }
 
 async function main() {
-  const args = process.argv.slice(2).filter((a) => a !== "--force");
+  const flags = new Set(["--force", "--test-player"]);
+  const args = process.argv.slice(2).filter((a) => !flags.has(a));
   const force = process.argv.includes("--force");
+  const withTestPlayer = process.argv.includes("--test-player");
   const [malePath, femalePath] = args;
   if (!malePath || !femalePath) {
     throw new Error("Usage: tsx scripts/seed-vpl.ts <Male.csv> <Female.csv> [--force]");
@@ -223,26 +230,31 @@ async function main() {
     await AuctionStateStore.updateById("global", {
       status: "IDLE", currentPlayerId: null, bids: [], lastResult: null,
       openCategoryIds: [], currentCategoryId: null, lotNo: 0,
-      timerEndsAt: null, timerRemainingMs: null, timerPaused: false,
     });
     console.log(`cleared existing data (${linked.length} login(s) unlinked)\n`);
   }
 
-  // --- categories, cheapest round first, specials last -------------------
-  const numeric = [...new Set(lots.map((l) => l.price).filter((p) => /^\d+$/.test(p)))]
-    .map(Number)
-    .sort((a, b) => a - b);
+  /**
+   * Three rounds. Every priced player is auctioned together in one general
+   * round — the sheet's 20/30/50/75/100-lakh tiers become each player's own
+   * base price rather than a round of their own — and Specialist and Power
+   * Player keep a round each, because every team must take exactly one.
+   */
   const specials = SPECIAL_CATEGORIES.filter((s) => lots.some((l) => l.price === s));
 
   const categoryIds = new Map<string, string>();
   let order = 0;
-  for (const price of numeric) {
-    const cat = await PlayerCategories.create({
-      name: `${price} Lakhs`, defaultBasePrice: price, order: order++,
-      minPerTeam: 0, maxPerTeam: null,
-    });
-    categoryIds.set(cat.name, cat._id);
-  }
+
+  const general = await PlayerCategories.create({
+    name: GENERAL_ROUND,
+    // Only applies to a player added later without a price of their own.
+    defaultBasePrice: 20 * LAKH,
+    order: order++,
+    minPerTeam: 0,
+    maxPerTeam: null,
+  });
+  categoryIds.set(general.name, general._id);
+
   for (const name of specials) {
     const limits = SPECIAL_LIMITS[name] ?? { minPerTeam: 0, maxPerTeam: null };
     const cat = await PlayerCategories.create({
@@ -254,7 +266,7 @@ async function main() {
     });
     categoryIds.set(cat.name, cat._id);
   }
-  console.log(`categories: ${[...categoryIds.keys()].join(", ")}`);
+  console.log(`rounds:     ${[...categoryIds.keys()].join(", ")}`);
 
   // --- tags from skill level ---------------------------------------------
   const tagIds = new Map<string, string>();
@@ -281,25 +293,44 @@ async function main() {
       amount: INITIAL_BUDGET, note: "Starting balance",
     });
   }
-  console.log(`teams:      ${TEAMS.length}, purse ${INITIAL_BUDGET} each`);
+  console.log(`teams:      ${TEAMS.length}, purse ${(INITIAL_BUDGET / CRORE).toFixed(0)} Cr each`);
 
   // --- players ------------------------------------------------------------
   await Players.createMany(
-    lots.map((lot, index) => ({
-      name: lot.name,
-      order: index,
-      role: primaryRole(lot.role),
-      categoryId: categoryIds.get(categoryNameFor(lot.price))!,
-      tagIds: lot.skill && tagIds.has(lot.skill) ? [tagIds.get(lot.skill)!] : [],
-      // Keep the sheet's full multi-role answer; the app stores only one role.
-      info: lot.role,
-      avatarUrl: null,
-      basePriceOverride: null,
-      status: "PENDING" as const,
-      soldToTeamId: null,
-      soldPrice: null,
-    }))
+    lots.map((lot, index) => {
+      const lakhs = /^\d+$/.test(lot.price) ? Number(lot.price) : null;
+      return {
+        name: lot.name,
+        order: index,
+        role: primaryRole(lot.role),
+        // Priced players share the general round; the specials keep their own.
+        categoryId: categoryIds.get(lakhs == null ? lot.price : GENERAL_ROUND)!,
+        // The sheet's tier becomes this player's own base price.
+        basePriceOverride: lakhs == null ? null : lakhs * LAKH,
+        tagIds: lot.skill && tagIds.has(lot.skill) ? [tagIds.get(lot.skill)!] : [],
+        // Keep the sheet's full multi-role answer; the app stores only one role.
+        info: lot.role,
+        avatarUrl: null,
+        status: "PENDING" as const,
+        soldToTeamId: null,
+        soldPrice: null,
+      };
+    })
   );
+
+  // --- an optional dry-run lot, last in the roster -------------------------
+  if (withTestPlayer) {
+    await Players.create({
+      name: "ZZ Test Player",
+      order: lots.length,
+      role: "Batsman",
+      categoryId: categoryIds.get(GENERAL_ROUND)!,
+      basePriceOverride: 20 * LAKH,
+      tagIds: [],
+      info: "Dry-run lot — safe to sell, unsold and delete.",
+    });
+    console.log(`\ntest player: ZZ Test Player added to ${GENERAL_ROUND}, last in the roster`);
+  }
 
   // --- settings -----------------------------------------------------------
   await getSingleton(AuctionSettingsStore);
@@ -308,18 +339,26 @@ async function main() {
     defaultMaxSquadSize: MAX_SQUAD_SIZE,
     minSquadSize: MIN_SQUAD_SIZE,
     bidIncrement: BID_INCREMENT,
-    timerSeconds: TIMER_SECONDS,
     captainsCount: true,
   });
 
   const byCategory = new Map<string, number>();
   for (const lot of lots) {
-    const name = categoryNameFor(lot.price);
-    byCategory.set(name, (byCategory.get(name) ?? 0) + 1);
+    const round = /^\d+$/.test(lot.price) ? GENERAL_ROUND : lot.price;
+    byCategory.set(round, (byCategory.get(round) ?? 0) + 1);
+  }
+
+  const byBasePrice = new Map<string, number>();
+  for (const lot of lots.filter((l) => /^\d+$/.test(l.price))) {
+    byBasePrice.set(lot.price, (byBasePrice.get(lot.price) ?? 0) + 1);
   }
 
   console.log(`players:    ${lots.length} (captains excluded)`);
   for (const [name, n] of byCategory) console.log(`              ${String(n).padStart(3)}  ${name}`);
+  console.log(`\nbase prices inside the ${GENERAL_ROUND} round:`);
+  for (const [lakhs, n] of [...byBasePrice].sort((a, b) => Number(a[0]) - Number(b[0]))) {
+    console.log(`              ${String(n).padStart(3)}  ${lakhs} Lakhs`);
+  }
   console.log(`\ncaptains:   ${TEAMS.length * 2}, set on their teams`);
   for (const t of TEAMS) {
     console.log(`              ${t.name.padEnd(20)} ${t.captainMale} / ${t.captainFemale}`);

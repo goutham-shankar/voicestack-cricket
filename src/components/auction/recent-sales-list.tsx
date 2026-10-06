@@ -37,7 +37,7 @@ export function RecentSalesList({ sales }: { sales: RecentSale[] }) {
               </p>
             </div>
             <span className="tabular-money shrink-0 font-semibold text-sold">
-              ₹{sale.price.toLocaleString("en-IN")}
+              {sale.price.toLocaleString("en-IN")}
             </span>
           </div>
         ))}

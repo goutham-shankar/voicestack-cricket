@@ -29,7 +29,7 @@ export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{team.name}</p>
               <p className="tabular-money text-xs font-medium text-foreground">
-                ₹{team.remaining.toLocaleString("en-IN")}
+                {team.remaining.toLocaleString("en-IN")}
               </p>
               <p
                 className={cn(

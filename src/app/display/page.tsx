@@ -14,22 +14,11 @@ import { WaitingStage } from "@/components/auction/display/waiting-stage";
 import { ShowcaseStage } from "@/components/auction/display/showcase-stage";
 import { StatsStrip, SalesTicker } from "@/components/auction/display/bottom-bar";
 import { ResultOverlay } from "@/components/auction/display/result-overlay";
-import { useAuctionPhase, useCountdown, PHASE_META } from "@/lib/auction-phase";
+import { useAuctionPhase, PHASE_META } from "@/lib/auction-phase";
 import { BrandLogo } from "@/components/brand-logo";
 import { Volume2 } from "lucide-react";
 import type { AuctionResult } from "@/lib/auction-types";
 
-/**
- * Bids on the current lot.
- *
- * This auction is conducted verbally — the service records only the winning
- * team and hammer price, so there is no live bid feed to read. The rail below
- * is wired to accept one: supply `BidEntry[]` here, newest first, and the
- * CURRENT BID figure, highest-bidder crest and recent-bids list light up with
- * no further changes. Until then the rail shows the opening price and an
- * explicit "awaiting first bid" state rather than inventing numbers.
- */
-const LIVE_BIDS: BidEntry[] = [];
 
 export default function DisplayPage() {
   const [flash, setFlash] = useState<AuctionResult | null>(null);
@@ -159,17 +148,37 @@ function Board({
   state: NonNullable<ReturnType<typeof useAuctionState>["state"]>;
   flash: AuctionResult | null;
 }) {
-  const { auctionState, stats, settings, recentSales } = state;
+  const { auctionState, stats, recentSales } = state;
   const player = auctionState.currentPlayerId;
 
   const showcase = auctionState.showcase === true;
-  const secondsLeft = useCountdown(auctionState);
-  const phase = useAuctionPhase(auctionState, flash, secondsLeft);
+  const phase = useAuctionPhase(auctionState, flash);
   const urgent = PHASE_META[phase].urgent ?? false;
 
   const basePrice = player
     ? (player.basePriceOverride ?? player.categoryId?.defaultBasePrice ?? 0)
     : 0;
+
+  /**
+   * Bids on the current lot, newest first, with each bidder's crest resolved
+   * from the live team list. This drives the CURRENT BID figure, the
+   * highest-bidder panel and the recent-bids list; an empty list leaves the
+   * rail on the opening price and its explicit "awaiting first bid" state.
+   */
+  const liveBids = useMemo<BidEntry[]>(() => {
+    const teamsById = new Map(state.teams.map((t) => [t._id, t]));
+    return [...auctionState.bids]
+      .reverse()
+      .map((bid, index) => {
+        const team = teamsById.get(bid.teamId);
+        return {
+          id: `${bid.teamId}-${bid.amount}-${index}`,
+          amount: bid.amount,
+          teamName: team?.name ?? "Unknown team",
+          teamLogoUrl: team?.logoUrl ?? null,
+        };
+      });
+  }, [auctionState.bids, state.teams]);
 
   // AuctionResult carries only the team name, so resolve the crest and the
   // post-purchase wallet from the live team list.
@@ -216,10 +225,8 @@ function Board({
               <PlayerPortrait player={player} phase={phase} />
               <BidRail
                 phase={phase}
-                bids={LIVE_BIDS}
+                bids={liveBids}
                 basePrice={basePrice}
-                secondsLeft={auctionState.timerEnabled ? secondsLeft : null}
-                timerTotal={settings.timerSeconds}
                 soldPrice={flash?.status === "SOLD" ? flash.price : null}
                 soldTeam={winningTeam}
               />

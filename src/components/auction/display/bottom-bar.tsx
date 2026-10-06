@@ -113,7 +113,7 @@ export function SalesTicker({ sales }: { sales: RecentSale[] }) {
                             isTop ? "text-gold" : "text-white"
                           )}
                         >
-                          ₹{sale.price.toLocaleString("en-IN")}
+                          {sale.price.toLocaleString("en-IN")}
                         </p>
                         <p
                           className={cn(

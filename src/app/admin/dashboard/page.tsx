@@ -38,7 +38,7 @@ export default async function AdminDashboardPage() {
         <StatCard label="Remaining" value={stats.remaining} icon={Gavel} />
         <StatCard
           label="Total Spent"
-          value={`₹${stats.totalSpent.toLocaleString("en-IN")}`}
+          value={`${stats.totalSpent.toLocaleString("en-IN")}`}
           icon={Wallet}
         />
       </div>

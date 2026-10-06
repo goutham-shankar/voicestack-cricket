@@ -124,7 +124,7 @@ export function PlayerQueue({
                   {sale.playerName}
                 </span>
                 <span>
-                  {sale.teamName}, ₹{fmt(sale.price)}
+                  {sale.teamName}, {fmt(sale.price)}
                 </span>
               </li>
             ))}

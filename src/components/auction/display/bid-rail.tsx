@@ -39,60 +39,16 @@ function TeamCrest({
   );
 }
 
-/** Ring that drains over the final seconds of a timed lot. */
-function CountdownRing({ seconds, total }: { seconds: number; total: number }) {
-  const R = 52;
-  const C = 2 * Math.PI * R;
-  const pct = total > 0 ? Math.max(0, Math.min(1, seconds / total)) : 0;
-  const urgent = seconds <= 5;
-
-  return (
-    <div className="relative grid size-32 shrink-0 place-items-center">
-      <svg viewBox="0 0 120 120" className="absolute inset-0 -rotate-90">
-        <circle cx="60" cy="60" r={R} fill="none" stroke="white" strokeOpacity="0.1" strokeWidth="7" />
-        <circle
-          cx="60"
-          cy="60"
-          r={R}
-          fill="none"
-          stroke={urgent ? "var(--live)" : "var(--gold)"}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeDasharray={C}
-          strokeDashoffset={C * (1 - pct)}
-          style={{ transition: "stroke-dashoffset 0.25s linear, stroke 0.3s" }}
-        />
-      </svg>
-      <motion.span
-        key={Math.ceil(seconds)}
-        initial={{ scale: 1.3, opacity: 0.4 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.25 }}
-        className={cn(
-          "tabular-money relative text-5xl font-black",
-          urgent ? "text-live" : "text-white"
-        )}
-      >
-        {Math.ceil(seconds)}
-      </motion.span>
-    </div>
-  );
-}
-
 export function BidRail({
   phase,
   bids,
   basePrice,
-  secondsLeft,
-  timerTotal,
   soldPrice,
   soldTeam,
 }: {
   phase: AuctionPhase;
   bids: BidEntry[];
   basePrice: number;
-  secondsLeft: number | null;
-  timerTotal: number;
   soldPrice?: number | null;
   soldTeam?: { name: string; logoUrl: string | null } | null;
 }) {
@@ -103,6 +59,19 @@ export function BidRail({
   // the opening price. Never a number the auction has not actually seen.
   const headline = settled ? (soldPrice ?? 0) : (top?.amount ?? basePrice);
   const hasBid = settled || top != null;
+
+  /**
+   * Rupee figures run long — "10,00,00,000" is twice the width of "20,00,000"
+   * — and the headline must not wrap, so the face is sized to the number
+   * rather than fixed. Without this the largest bids overflow the stage.
+   */
+  const headlineText = headline.toLocaleString("en-IN");
+  const headlineFontSize =
+    headlineText.length >= 12
+      ? "clamp(2rem, 3.9vw, 4.5rem)"
+      : headlineText.length >= 9
+        ? "clamp(2.25rem, 4.7vw, 5.5rem)"
+        : "clamp(2.75rem, 6.2vw, 7rem)";
 
   // Pulse the figure whenever it changes.
   const [pop, setPop] = useState(0);
@@ -143,18 +112,18 @@ export function BidRail({
             settled ? "text-sold" : hasBid ? "text-gold" : "text-white/92"
           )}
           style={{
-            fontSize: "clamp(2.75rem, 6.2vw, 7rem)",
+            fontSize: headlineFontSize,
             textShadow: hasBid
               ? "0 0 70px color-mix(in oklch, var(--gold) 38%, transparent)"
               : undefined,
           }}
         >
-          ₹{headline.toLocaleString("en-IN")}
+          {headlineText}
         </motion.p>
 
         {hasBid && basePrice > 0 && (
           <p className="mt-2.5 text-sm font-semibold uppercase tracking-[0.2em] text-white/68">
-            Base ₹{basePrice.toLocaleString("en-IN")}
+            Base {basePrice.toLocaleString("en-IN")}
           </p>
         )}
       </div>
@@ -196,10 +165,6 @@ export function BidRail({
             </motion.p>
           )}
         </AnimatePresence>
-
-        {secondsLeft != null && !settled && (
-          <CountdownRing seconds={secondsLeft} total={timerTotal} />
-        )}
       </div>
 
       {/* Recent bids */}
@@ -226,7 +191,7 @@ export function BidRail({
                       i === 0 ? "text-gold" : "text-white"
                     )}
                   >
-                    ₹{bid.amount.toLocaleString("en-IN")}
+                    {bid.amount.toLocaleString("en-IN")}
                   </span>
                   <span className="flex items-center gap-2.5 truncate text-lg font-semibold text-white/90">
                     <TeamCrest name={bid.teamName} logoUrl={bid.teamLogoUrl} className="size-7" />

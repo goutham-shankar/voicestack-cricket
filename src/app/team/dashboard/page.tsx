@@ -33,7 +33,7 @@ export default async function TeamDashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Remaining Wallet"
-          value={`₹${remaining.toLocaleString("en-IN")}`}
+          value={`${remaining.toLocaleString("en-IN")}`}
           icon={Wallet}
           accent="gold"
         />
@@ -52,8 +52,8 @@ export default async function TeamDashboardPage() {
         <CardContent className="space-y-2">
           <Progress value={initialBudget ? (spent / initialBudget) * 100 : 0} />
           <div className="flex justify-between text-xs text-muted-foreground tabular-money">
-            <span>Spent ₹{spent.toLocaleString("en-IN")}</span>
-            <span>Budget ₹{initialBudget.toLocaleString("en-IN")}</span>
+            <span>Spent {spent.toLocaleString("en-IN")}</span>
+            <span>Budget {initialBudget.toLocaleString("en-IN")}</span>
           </div>
         </CardContent>
       </Card>
