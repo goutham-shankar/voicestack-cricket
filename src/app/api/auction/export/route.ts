@@ -14,12 +14,19 @@ const HEADERS = [
   "#",
   "Player",
   "Role",
+  "Gender",
   "Category",
   "Status",
   "Team",
   "Sold Price",
   "Base Price",
 ] as const;
+
+function genderLabel(gender: "M" | "F" | null) {
+  if (gender === "M") return "Male";
+  if (gender === "F") return "Female";
+  return "";
+}
 
 export async function GET() {
   const { response: unauthorized } = await requireAdmin();
@@ -42,6 +49,7 @@ export async function GET() {
       i + 1,
       p.name,
       p.role,
+      genderLabel(p.gender),
       p.categoryId?.name ?? "",
       p.status,
       // Unsold and pending players have no buyer.

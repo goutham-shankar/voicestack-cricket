@@ -30,6 +30,7 @@ export type TeamRecord = {
   loginEmail?: string | null;
   captainMale?: string;
   captainFemale?: string;
+  femaleCount?: number;
 };
 
 export function TeamFormDialog({

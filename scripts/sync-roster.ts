@@ -46,6 +46,13 @@ function primaryRole(raw: string): PlayerRole {
   return "Batsman";
 }
 
+function playerGender(raw: string): "M" | "F" {
+  const value = raw.trim().toLowerCase();
+  if (value === "f" || value === "female") return "F";
+  if (value === "m" || value === "male") return "M";
+  throw new Error(`Unknown gender "${raw}" in roster`);
+}
+
 const key = (name: string) => name.replace(/\s+/g, " ").trim().toLowerCase();
 
 function sameTags(a: string[], b: string[]) {
@@ -92,6 +99,7 @@ async function main() {
       name: row.name.replace(/\s+/g, " ").trim(),
       order,
       role: primaryRole(row.role),
+      gender: playerGender(row.gender),
       categoryId: category._id,
       // Specials are priced by the category; everyone else carries the
       // sheet's own figure, converted from lakhs to rupees.
@@ -118,6 +126,7 @@ async function main() {
     if (have.name !== want.name) changes.name = want.name;
     if (have.order !== want.order) changes.order = want.order;
     if (have.role !== want.role) changes.role = want.role;
+    if (have.gender !== want.gender) changes.gender = want.gender;
     if (have.categoryId !== want.categoryId) changes.categoryId = want.categoryId;
     if (have.basePriceOverride !== want.basePriceOverride) {
       changes.basePriceOverride = want.basePriceOverride;

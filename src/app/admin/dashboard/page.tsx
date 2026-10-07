@@ -7,7 +7,7 @@ import { TeamOverviewTable } from "@/components/admin/team-overview-table";
 import { Circle, Users, Trophy, Wallet, Gavel } from "lucide-react";
 
 export default async function AdminDashboardPage() {
-  const { stats, teams, auctionState } = await getFullState();
+  const { stats, teams, auctionState, settings } = await getFullState();
   const isLive = auctionState.status === "LIVE";
 
   return (
@@ -49,7 +49,10 @@ export default async function AdminDashboardPage() {
           <CardTitle className="text-base">Team Overview</CardTitle>
         </CardHeader>
         <CardContent>
-          <TeamOverviewTable teams={teams} />
+          <TeamOverviewTable
+            teams={teams}
+            minFemalePlayers={settings.minFemalePlayers}
+          />
         </CardContent>
       </Card>
     </div>

@@ -44,6 +44,12 @@ export type TeamBoardStats = {
   rem: Record<string, number>;
   /** Short of being able to finish the squad at base prices. */
   shortfall: number;
+  /** Female players including the female captain when captains count. */
+  female: number;
+  /** Female players still needed to reach the configured minimum. */
+  femaleRem: number;
+  /** Additional reserve needed for female slots beyond category requirements. */
+  femaleReserve: number;
   /** Max bid for the round in play, or why the team cannot bid. */
   limit:
     | { ok: true; max: number; holdAll: number; holdOpen: number; fills: boolean }
@@ -55,6 +61,7 @@ export type PlayerRef = {
   name: string;
   avatarUrl: string | null;
   role: string;
+  gender: "M" | "F" | null;
   categoryId: CategoryRef;
   basePriceOverride: number | null;
   tagIds: TagRef[];
@@ -74,6 +81,8 @@ export type TeamSummary = {
   spent: number;
   remaining: number;
   squadCount: number;
+  /** Female players held, including the female captain when captains count. */
+  femaleCount: number;
   /** null whenever there is no ceiling to count down to. */
   slotsRemaining: number | null;
   captainMale: string;
@@ -173,6 +182,8 @@ export type AuctionStats = {
 export type AuctionRuntimeSettings = {
   /** Smallest squad every team must reach, captains included when they count. */
   minSquadSize: number;
+  /** Female players required; the female captain counts when captains do. */
+  minFemalePlayers: number;
   /** Fallback step, used only when no tiers are configured. */
   bidIncrement: number;
   /** Banded steps: how much a bid must rise by, given what it rises from. */

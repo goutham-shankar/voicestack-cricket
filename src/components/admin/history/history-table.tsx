@@ -20,6 +20,7 @@ type PlayerRow = {
   name: string;
   avatarUrl: string | null;
   role: string;
+  gender: "M" | "F" | null;
   categoryId: CategoryRef;
   basePriceOverride: number | null;
   status: "SOLD" | "UNSOLD";
@@ -43,6 +44,7 @@ export function HistoryTable({ players }: { players: PlayerRow[] }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Player</TableHead>
+                <TableHead>Gender</TableHead>
                 <TableHead>Base Price</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Sold For</TableHead>
@@ -72,6 +74,13 @@ export function HistoryTable({ players }: { players: PlayerRow[] }) {
                           </p>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {player.gender === "M"
+                        ? "Male"
+                        : player.gender === "F"
+                          ? "Female"
+                          : "—"}
                     </TableCell>
                     <TableCell className="tabular-money">
                       {fmt(basePrice)}

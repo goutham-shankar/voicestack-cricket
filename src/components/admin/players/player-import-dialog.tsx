@@ -31,7 +31,15 @@ type ParsedRow =
   | { status: "valid"; source: Record<string, string>; player: PlayerInput }
   | { status: "error"; source: Record<string, string>; error: string };
 
-const EXPECTED_HEADERS = ["name", "role", "category", "basePriceOverride", "tags", "info"];
+const EXPECTED_HEADERS = [
+  "name",
+  "role",
+  "gender",
+  "category",
+  "basePriceOverride",
+  "tags",
+  "info",
+];
 
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
@@ -80,7 +88,7 @@ function downloadTemplate(categories: CategoryRecord[]) {
   const sampleCategory = categories[0]?.name ?? "Professional";
   const lines = [
     EXPECTED_HEADERS.join(","),
-    `"Rahul Kumar","${PLAYER_ROLES[0]}","${sampleCategory}","","",""`,
+    `"Rahul Kumar","${PLAYER_ROLES[0]}","M","${sampleCategory}","","",""`,
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -152,6 +160,15 @@ export function PlayerImportDialog({
           };
         }
 
+        const genderInput = (source.gender ?? "").toUpperCase();
+        if (genderInput !== "M" && genderInput !== "F") {
+          return {
+            status: "error",
+            source,
+            error: `Unknown gender "${source.gender ?? ""}" — expected M or F`,
+          };
+        }
+
         const categoryInput = source.category ?? "";
         const category = categories.find(
           (c) => c.name.toLowerCase() === categoryInput.toLowerCase()
@@ -188,6 +205,7 @@ export function PlayerImportDialog({
             name,
             avatarUrl: null,
             role,
+            gender: genderInput,
             categoryId: category._id,
             basePriceOverride,
             tagIds,
@@ -250,7 +268,7 @@ export function PlayerImportDialog({
         <DialogHeader>
           <DialogTitle>Import Players from CSV</DialogTitle>
           <DialogDescription>
-            Columns: name, role, category, basePriceOverride (optional), tags
+            Columns: name, role, gender (M or F), category, basePriceOverride (optional), tags
             (optional, semicolon-separated), info (optional). Role and category
             must match existing values exactly (case-insensitive).
           </DialogDescription>
@@ -305,6 +323,7 @@ export function PlayerImportDialog({
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Gender</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
@@ -314,6 +333,7 @@ export function PlayerImportDialog({
                     <TableRow key={i}>
                       <TableCell>{row.source.name || "—"}</TableCell>
                       <TableCell>{row.source.role || "—"}</TableCell>
+                      <TableCell>{row.source.gender || "—"}</TableCell>
                       <TableCell>{row.source.category || "—"}</TableCell>
                       <TableCell>
                         {row.status === "valid" ? (

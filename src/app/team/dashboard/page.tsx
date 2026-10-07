@@ -1,4 +1,4 @@
-import { fmt } from "@/lib/auction-engine";
+import { FEMALE_CAPTAINS_PER_TEAM, fmt } from "@/lib/auction-engine";
 import { auth } from "@/auth";
 import { Players } from "@/models/Player";
 import { populatePlayers } from "@/lib/services/populate";
@@ -50,6 +50,12 @@ export default async function TeamDashboardPage() {
   ]);
 
   const minSquad = settings.minSquadSize ?? 20;
+  const minFemale = settings.minFemalePlayers ?? 5;
+  const captainsCount = settings.captainsCount ?? true;
+  const signedFemale = players.filter((player) => player.gender === "F").length;
+  const femaleCount =
+    signedFemale + (captainsCount ? FEMALE_CAPTAINS_PER_TEAM : 0);
+  const femalesStillNeeded = Math.max(0, minFemale - femaleCount);
   // A team whose ledger has not been backfilled has no entries at all, and the
   // summary then reports a remaining balance of 0. Fall back to the budget
   // minus spend, the same way the auction board does, so the purse never reads
@@ -90,6 +96,19 @@ export default async function TeamDashboardPage() {
           {stillNeeded > 0
             ? `${stillNeeded} more to reach the minimum of ${minSquad}`
             : `Minimum of ${minSquad} reached — you can keep signing`}
+        </span>
+      </section>
+
+      <section className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-border bg-card p-4">
+        <span className="text-2xl font-semibold tabular-nums">{femaleCount}</span>
+        <span className="text-sm text-muted-foreground">
+          {femaleCount === 1 ? "female player" : "female players"}
+        </span>
+        <span className="ml-auto text-sm text-muted-foreground">
+          {femalesStillNeeded > 0
+            ? `${femalesStillNeeded} more to reach the minimum of ${minFemale}`
+            : `Minimum of ${minFemale} female players reached`}
+          {captainsCount ? " The female captain counts toward this." : ""}
         </span>
       </section>
 
@@ -134,7 +153,15 @@ export default async function TeamDashboardPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{player.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {[player.role, player.categoryId?.name]
+                    {[
+                      player.role,
+                      player.gender === "F"
+                        ? "Female"
+                        : player.gender === "M"
+                          ? "Male"
+                          : null,
+                      player.categoryId?.name,
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>

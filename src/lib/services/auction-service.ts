@@ -15,6 +15,7 @@ import { PlayerCategories, type PlayerCategoryDoc } from "@/models/PlayerCategor
 import { PlayerTags, type PlayerTagDoc } from "@/models/PlayerTag";
 import type { PopulatedPlayer } from "@/lib/services/populate";
 import {
+  FEMALE_CAPTAINS_PER_TEAM,
   allTeamStats,
   bidLimit,
   checkBid,
@@ -38,6 +39,7 @@ import {
 
 type RuntimeSettings = {
   minSquadSize: number;
+  minFemalePlayers: number;
   bidIncrement: number;
   bidIncrementTiers?: BidIncrementTier[];
   captainsCount: boolean;
@@ -128,6 +130,7 @@ async function readSnapshot(): Promise<AuctionSnapshot> {
     state,
     settings: {
       minSquadSize: settingsDoc.minSquadSize ?? 20,
+      minFemalePlayers: settingsDoc.minFemalePlayers ?? 5,
       bidIncrement: settingsDoc.bidIncrement ?? 20 * 100_000,
       bidIncrementTiers: settingsDoc.bidIncrementTiers,
       captainsCount: settingsDoc.captainsCount ?? true,
@@ -211,6 +214,7 @@ function buildEngineContext(snap: AuctionSnapshot): EngineContext {
     id: pl._id,
     name: pl.name,
     categoryId: pl.categoryId,
+    gender: pl.gender ?? null,
     status: pl.status as EnginePlayer["status"],
     teamId: pl.soldToTeamId ?? null,
     price: pl.soldPrice ?? null,
@@ -226,6 +230,7 @@ function buildEngineContext(snap: AuctionSnapshot): EngineContext {
     players,
     settings: {
       minSquadSize: snap.settings.minSquadSize,
+      minFemalePlayers: snap.settings.minFemalePlayers,
       bidIncrement: snap.settings.bidIncrement,
       bidIncrementTiers: snap.settings.bidIncrementTiers,
       captainsCount: snap.settings.captainsCount,
@@ -254,13 +259,23 @@ export async function getAllTeamsSummary(snap?: AuctionSnapshot) {
   const resolved = snap ?? (await loadSnapshot());
 
   const squadByTeam = new Map<string, number>();
+  const femaleByTeam = new Map<string, number>();
   for (const player of resolved.players) {
     if (player.status !== "SOLD" || !player.soldToTeamId) continue;
     squadByTeam.set(
       player.soldToTeamId,
       (squadByTeam.get(player.soldToTeamId) ?? 0) + 1
     );
+    if (player.gender === "F") {
+      femaleByTeam.set(
+        player.soldToTeamId,
+        (femaleByTeam.get(player.soldToTeamId) ?? 0) + 1
+      );
+    }
   }
+  const femaleCaptains = resolved.settings.captainsCount
+    ? FEMALE_CAPTAINS_PER_TEAM
+    : 0;
 
   return resolved.teams.map((team) => {
     const squadCount = squadByTeam.get(team._id) ?? 0;
@@ -276,6 +291,7 @@ export async function getAllTeamsSummary(snap?: AuctionSnapshot) {
       spent,
       remaining,
       squadCount,
+      femaleCount: (femaleByTeam.get(team._id) ?? 0) + femaleCaptains,
       slotsRemaining:
         team.maxSquadSize == null ? null : team.maxSquadSize - squadCount,
       captainMale: team.captainMale ?? "",
@@ -305,7 +321,7 @@ function basePriceFor(player: PlayerDoc, snap: AuctionSnapshot) {
 function assertTeamCanAfford(
   ctx: EngineContext,
   teamId: string,
-  categoryId: string,
+  player: EnginePlayer,
   amount: number
 ) {
   const team = ctx.input.teams.find((item) => item.id === teamId);
@@ -320,9 +336,14 @@ function assertTeamCanAfford(
     return;
   }
 
-  const limit = bidLimit(ctx.input, teamId, categoryId, ctx.stats);
+  const limit = bidLimit(ctx.input, teamId, player.categoryId, ctx.stats, {
+    playerId: player.id,
+    gender: player.gender,
+  });
   if (!limit.ok) {
-    throw new ServiceError(limitReason(ctx.input, teamId, limit.code, categoryId));
+    throw new ServiceError(
+      limitReason(ctx.input, teamId, limit.code, player.categoryId)
+    );
   }
   if (amount > limit.max + 1e-9) {
     throw new ServiceError(`${team.name} can pay at most ${fmt(limit.max)}`);
@@ -557,7 +578,15 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
     const teamStats = ctx.stats.get(team._id);
     if (!teamStats || !ctx.categories.length) return team;
     const limit = roundCategoryId
-      ? bidLimit(ctx.input, team._id, roundCategoryId, ctx.stats)
+      ? bidLimit(
+          ctx.input,
+          team._id,
+          roundCategoryId,
+          ctx.stats,
+          liveRaw
+            ? { playerId: liveRaw._id, gender: liveRaw.gender ?? null }
+            : undefined
+        )
       : null;
     return {
       ...team,
@@ -571,6 +600,9 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
         mand: teamStats.mand,
         rem: teamStats.rem,
         shortfall: teamStats.shortfall,
+        female: teamStats.female,
+        femaleRem: teamStats.femaleRem,
+        femaleReserve: teamStats.femaleReserve,
         limit:
           limit && limit.ok
             ? {
@@ -788,7 +820,9 @@ export async function sellPlayer(
   if (!team) throw new ServiceError("Team not found", 404);
 
   const ctx = buildEngineContext(snap);
-  assertTeamCanAfford(ctx, teamId, player.categoryId, price);
+  const enginePlayer = ctx.input.players.find((item) => item.id === player._id);
+  if (!enginePlayer) throw new ServiceError("Player not found", 404);
+  assertTeamCanAfford(ctx, teamId, enginePlayer, price);
 
   const soldPlayer = await claimPlayerStatus(
     player._id,
@@ -1022,11 +1056,15 @@ export async function setPowerPick(
     throw new ServiceError(`Offer must be at least ${fmt(basePrice)}`);
   }
 
-  const ledger = snap.ledgerByTeam.get(teamId);
-  const remaining = ledger ? ledger.remaining : team.initialBudget;
-  if (amount > remaining + 1e-9) {
-    throw new ServiceError(`${team.name} has only ${fmt(remaining)} left`);
+  // The power round still has to preserve mandatory squad and female slots.
+  // Treat its category as open because this round is managed outside setRound().
+  const ctx = buildEngineContext(snap);
+  if (!ctx.input.openCategoryIds.includes(category._id)) {
+    ctx.input.openCategoryIds = [...ctx.input.openCategoryIds, category._id];
   }
+  const enginePlayer = ctx.input.players.find((item) => item.id === player._id);
+  if (!enginePlayer) throw new ServiceError("Player not found", 404);
+  assertTeamCanAfford(ctx, teamId, enginePlayer, amount);
 
   const picks = round.picks.filter((pick) => pick.teamId !== teamId);
   picks.push({ teamId, playerId, amount });

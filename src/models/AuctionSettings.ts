@@ -6,6 +6,8 @@ export type AuctionSettings = {
   defaultMaxSquadSize: number;
   /** Smallest squad every team must end up with, captains included when they count. */
   minSquadSize: number;
+  /** Female players required per team; the female captain counts when captains do. */
+  minFemalePlayers: number;
   /** Fallback step, used only when no tiers are configured. */
   bidIncrement: number;
   /** Banded steps: how much a bid must rise by, given what it rises from. */
@@ -23,6 +25,7 @@ export const AuctionSettingsStore = collection<AuctionSettings>({
     defaultWalletBudget: 100000,
     defaultMaxSquadSize: 12,
     minSquadSize: 20,
+    minFemalePlayers: 5,
     bidIncrement: 20 * 100000,
     bidIncrementTiers: [
       { from: 0, increment: 10 * 100000 },

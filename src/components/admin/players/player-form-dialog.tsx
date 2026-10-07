@@ -40,6 +40,7 @@ export type PlayerRecord = {
   name: string;
   avatarUrl: string | null;
   role: (typeof PLAYER_ROLES)[number];
+  gender: "M" | "F" | null;
   categoryId: { _id: string; name: string; defaultBasePrice: number } | string | null;
   basePriceOverride: number | null;
   tagIds: (TagRecord | string)[];
@@ -71,6 +72,7 @@ export function PlayerFormDialog({
     name: player?.name ?? "",
     avatarUrl: player?.avatarUrl ?? null,
     role: player?.role ?? PLAYER_ROLES[0],
+    gender: player?.gender ?? ("" as PlayerInput["gender"]),
     categoryId:
       typeof player?.categoryId === "object" && player.categoryId
         ? player.categoryId._id
@@ -185,7 +187,7 @@ export function PlayerFormDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label>Role</Label>
               <Select
@@ -205,6 +207,29 @@ export function PlayerFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Gender</Label>
+              <Select
+                value={watch("gender")}
+                onValueChange={(value) =>
+                  setValue("gender", value as PlayerInput["gender"], {
+                    shouldDirty: true,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="M">Male</SelectItem>
+                  <SelectItem value="F">Female</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.gender && (
+                <p className="text-sm text-destructive">{errors.gender.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">

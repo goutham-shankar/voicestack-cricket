@@ -93,6 +93,7 @@ async function main() {
     ];
     const settingsWithBands = {
       minSquadSize: 3,
+      minFemalePlayers: 0,
       bidIncrement: 20 * L,
       bidIncrementTiers: bands,
       captainsCount: true,

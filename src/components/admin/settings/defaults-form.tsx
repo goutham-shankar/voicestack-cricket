@@ -17,6 +17,7 @@ type SettingsDoc = {
   defaultWalletBudget: number;
   // Added with the auction board; older documents will not have them.
   minSquadSize?: number;
+  minFemalePlayers?: number;
   bidIncrement?: number;
   bidIncrementTiers?: { from: number; increment: number }[];
   captainsCount?: boolean;
@@ -45,6 +46,7 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
     defaultValues: {
       defaultWalletBudget: initialSettings.defaultWalletBudget,
       minSquadSize: initialSettings.minSquadSize ?? 20,
+      minFemalePlayers: initialSettings.minFemalePlayers ?? 5,
       bidIncrement: initialSettings.bidIncrement ?? 500,
       captainsCount: initialSettings.captainsCount ?? true,
     },
@@ -148,6 +150,24 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
             {errors.bidIncrement && (
               <p className="text-sm text-destructive">
                 {errors.bidIncrement.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="minFemalePlayers">Minimum Female Players</Label>
+            <Input
+              id="minFemalePlayers"
+              type="number"
+              {...register("minFemalePlayers", { valueAsNumber: true })}
+            />
+            <p className="text-xs text-muted-foreground">
+              The female captain counts when captains count toward the squad.
+              Bids preserve enough slots and wallet balance to reach this number.
+            </p>
+            {errors.minFemalePlayers && (
+              <p className="text-sm text-destructive">
+                {errors.minFemalePlayers.message}
               </p>
             )}
           </div>

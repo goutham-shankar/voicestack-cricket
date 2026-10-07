@@ -44,6 +44,7 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
     state.auctionState.currentCategoryId;
   const round = state.categories.find((c) => c._id === roundId);
   const minSquad = state.settings.minSquadSize;
+  const minFemale = state.settings.minFemalePlayers;
 
   return (
     <div className="tablewrap">
@@ -58,6 +59,7 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
               Max bid{round ? `, ${round.name}` : ""}
             </th>
             <th scope="col">Squad</th>
+            <th scope="col">Female</th>
             {state.categories.map((category) => (
               <th scope="col" key={category._id}>
                 {category.name}
@@ -72,7 +74,7 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
             const limit = board?.limit;
             const out = isLive && !leading && !limit?.ok;
             const open = Boolean(expanded[team._id]);
-            const colSpan = 6 + state.categories.length;
+            const colSpan = 7 + state.categories.length;
 
             return [
               <tr
@@ -151,6 +153,15 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
                     of {minSquad}
                     {team.maxSquadSize != null && `, max ${team.maxSquadSize}`}
                   </span>
+                </td>
+
+                <td>
+                  <span
+                    className={`big${(board?.female ?? 0) >= minFemale ? " done" : ""}`}
+                  >
+                    {board?.female ?? "—"}
+                  </span>
+                  <span className="sub">of {minFemale}</span>
                 </td>
 
                 {state.categories.map((category) => {
@@ -257,6 +268,10 @@ function TeamDetail({
             {keep.length
               ? `Kept back so the squad can still be completed: ${keep.join(", ")}.`
               : "Nothing has to be kept back."}
+            {board.femaleRem > 0 &&
+              ` ${board.femaleRem} more female player${
+                board.femaleRem === 1 ? "" : "s"
+              } required; ${fmt(board.femaleReserve)} of the reserve is additional to category slots.`}
           </p>
         </>
       ) : (

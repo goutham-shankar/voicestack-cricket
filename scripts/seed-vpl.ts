@@ -212,8 +212,12 @@ async function main() {
 
   // Players keep each sheet's own order, male roster first.
   const lots = [
-    ...maleRows.filter((r) => r.price !== "Captain"),
-    ...femaleRows.filter((r) => r.price !== "Captain"),
+    ...maleRows
+      .filter((r) => r.price !== "Captain")
+      .map((row) => ({ ...row, gender: "M" as const })),
+    ...femaleRows
+      .filter((r) => r.price !== "Captain")
+      .map((row) => ({ ...row, gender: "F" as const })),
   ];
 
   const TEAMS = TEAM_NAMES.map((name) => {
@@ -329,6 +333,7 @@ async function main() {
         name: lot.name,
         order: index,
         role: primaryRole(lot.role),
+        gender: lot.gender,
         // Priced players share the general round; the specials keep their own.
         categoryId: categoryIds.get(lakhs == null ? lot.price : GENERAL_ROUND)!,
         // The sheet's tier becomes this player's own base price.
@@ -350,6 +355,7 @@ async function main() {
       name: "ZZ Test Player",
       order: lots.length,
       role: "Batsman",
+      gender: "M",
       categoryId: categoryIds.get(GENERAL_ROUND)!,
       basePriceOverride: 20 * LAKH,
       tagIds: [],
@@ -364,6 +370,7 @@ async function main() {
     defaultWalletBudget: INITIAL_BUDGET,
     defaultMaxSquadSize: MAX_SQUAD_SIZE,
     minSquadSize: MIN_SQUAD_SIZE,
+    minFemalePlayers: 5,
     bidIncrement: BID_INCREMENT,
     bidIncrementTiers: BID_INCREMENT_TIERS,
     captainsCount: true,

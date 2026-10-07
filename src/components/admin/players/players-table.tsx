@@ -38,6 +38,12 @@ import { Pencil, Search, Users } from "lucide-react";
 
 const ALL = "ALL";
 
+function genderLabel(gender: PlayerRecord["gender"]) {
+  if (gender === "M") return "Male";
+  if (gender === "F") return "Female";
+  return "—";
+}
+
 export function PlayersTable({
   initialPlayers,
   categories,
@@ -179,6 +185,7 @@ export function PlayersTable({
             <TableHeader>
               <TableRow>
                 <TableHead>Player</TableHead>
+                <TableHead>Gender</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Base Price</TableHead>
                 <TableHead>Tags</TableHead>
@@ -216,6 +223,7 @@ export function PlayersTable({
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell>{genderLabel(player.gender)}</TableCell>
                     <TableCell>{category?.name ?? "No category"}</TableCell>
                     <TableCell className="tabular-money font-medium text-primary">
                       {fmt(basePrice)}

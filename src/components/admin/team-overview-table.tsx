@@ -10,7 +10,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { TeamSummary } from "@/lib/auction-types";
 
-export function TeamOverviewTable({ teams }: { teams: TeamSummary[] }) {
+export function TeamOverviewTable({
+  teams,
+  minFemalePlayers,
+}: {
+  teams: TeamSummary[];
+  minFemalePlayers: number;
+}) {
   if (teams.length === 0) {
     return (
       <p className="py-6 text-center text-sm text-muted-foreground">
@@ -25,6 +31,7 @@ export function TeamOverviewTable({ teams }: { teams: TeamSummary[] }) {
         <TableRow>
           <TableHead>Team</TableHead>
           <TableHead>Players</TableHead>
+          <TableHead>Female</TableHead>
           <TableHead>Spent</TableHead>
           <TableHead>Balance</TableHead>
           <TableHead>Slots Left</TableHead>
@@ -47,6 +54,10 @@ export function TeamOverviewTable({ teams }: { teams: TeamSummary[] }) {
             <TableCell className="tabular-nums">
               {team.squadCount}
               {team.maxSquadSize != null && `/${team.maxSquadSize}`}
+            </TableCell>
+            <TableCell className="tabular-nums">
+              {team.femaleCount}
+              <span className="text-muted-foreground"> of {minFemalePlayers}</span>
             </TableCell>
             <TableCell className="tabular-money">
               {fmt(team.spent)}

@@ -20,7 +20,13 @@ import { TeamFormDialog, type TeamRecord } from "@/components/admin/teams/team-f
 import { TeamLedgerDialog } from "@/components/admin/teams/team-ledger-dialog";
 import { Pencil, Shield } from "lucide-react";
 
-export function TeamsTable({ initialTeams }: { initialTeams: TeamRecord[] }) {
+export function TeamsTable({
+  initialTeams,
+  minFemalePlayers,
+}: {
+  initialTeams: TeamRecord[];
+  minFemalePlayers: number;
+}) {
   const router = useRouter();
 
   async function handleDelete(id: string) {
@@ -56,6 +62,7 @@ export function TeamsTable({ initialTeams }: { initialTeams: TeamRecord[] }) {
                 <TableHead>Team</TableHead>
                 <TableHead>Wallet Budget</TableHead>
                 <TableHead>Max Squad</TableHead>
+                <TableHead>Female</TableHead>
                 <TableHead>Login</TableHead>
                 <TableHead className="w-24 text-right">Actions</TableHead>
               </TableRow>
@@ -78,6 +85,13 @@ export function TeamsTable({ initialTeams }: { initialTeams: TeamRecord[] }) {
                     {fmt(team.initialBudget)}
                   </TableCell>
                   <TableCell>{team.maxSquadSize ?? "No limit"}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {team.femaleCount ?? 0}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      of {minFemalePlayers}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     {team.loginEmail ? (
                       <Badge variant="secondary" className="font-normal">

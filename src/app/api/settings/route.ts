@@ -16,13 +16,14 @@ export async function PATCH(req: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const body = await req.json();
-  const parsed = settingsSchema.partial().safeParse(body);
+  // Validate the merged document so cross-field rules also hold for PATCHes
+  // that only change one side of a constraint.
+  const current = await getSingleton(AuctionSettingsStore);
+  const parsed = settingsSchema.safeParse({ ...current, ...body });
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  // Creates the document from its defaults first, so a PATCH works on a fresh DB.
-  await getSingleton(AuctionSettingsStore);
   const settings = await AuctionSettingsStore.updateById("global", parsed.data);
   return NextResponse.json(settings);
 }

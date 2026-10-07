@@ -64,6 +64,9 @@ async function main() {
     bids: [],
     lastResult: null,
     lotNo: 0,
+    // Added with the final round: a reset must close it and drop any offers,
+    // or the board comes back up mid power round with stale picks.
+    powerRound: { active: false, revealed: false, picks: [] },
   });
 
   console.log(`\nreset ${touched.length} player(s), removed ${spends.length} ledger entr(ies), state is IDLE`);

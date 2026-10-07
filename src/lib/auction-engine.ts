@@ -15,6 +15,7 @@
  */
 
 export const CAPTAINS_PER_TEAM = 2;
+export const FEMALE_CAPTAINS_PER_TEAM = 1;
 
 /** Why a team cannot bid on the current lot. */
 export type BidRefusalCode =
@@ -27,7 +28,13 @@ export type BidRefusalCode =
   /** The team cannot pay the base price and still complete its squad. */
   | "short"
   /** The players left are needed for the other teams' minimums. */
-  | "reserved";
+  | "reserved"
+  /** Remaining squad slots are needed to reach the female-player minimum. */
+  | "female"
+  /** The remaining female players are needed by teams below their minimum. */
+  | "female_reserved"
+  /** There are not enough female players left for this team to reach its minimum. */
+  | "female_pool";
 
 export type EngineCategory = {
   id: string;
@@ -49,6 +56,7 @@ export type BidIncrementTier = { from: number; increment: number };
 
 export type EngineSettings = {
   minSquadSize: number;
+  minFemalePlayers: number;
   /** Used when no tiers are configured. */
   bidIncrement: number;
   /** When set, replaces `bidIncrement` entirely. */
@@ -86,6 +94,7 @@ export type EnginePlayer = {
   id: string;
   name: string;
   categoryId: string;
+  gender: "M" | "F" | null;
   status: "PENDING" | "LIVE" | "SOLD" | "UNSOLD";
   teamId: string | null;
   price: number | null;
@@ -128,6 +137,14 @@ export type TeamStats = {
   spendable: number;
   /** Squad size including captains when they count. */
   squad: number;
+  /** Female players including the female captain when captains count. */
+  female: number;
+  /** Female players still required to reach the configured minimum. */
+  femaleRem: number;
+  /** Extra base-price reserve not already covered by category requirements. */
+  femaleReserve: number;
+  /** Whether enough unsold female players exist for this team to finish. */
+  femaleAvailable: boolean;
   needTotal: number;
   /** How far short of being able to complete the squad at base prices. */
   shortfall: number;
@@ -322,6 +339,17 @@ export function teamStats(input: EngineInput, teamId: string): TeamStats {
   }
 
   const caps = input.settings.captainsCount ? CAPTAINS_PER_TEAM : 0;
+  const femaleCaptains = input.settings.captainsCount
+    ? FEMALE_CAPTAINS_PER_TEAM
+    : 0;
+  const female =
+    femaleCaptains + mine.filter((player) => player.gender === "F").length;
+  const femaleRem = Math.max(
+    0,
+    Math.round(input.settings.minFemalePlayers ?? 0) - female
+  );
+  const femalePlan = planFemaleSlots(input, rem, femaleRem);
+  needTotal = r2(needTotal + femalePlan.reserve);
 
   return {
     teamId,
@@ -336,8 +364,62 @@ export function teamStats(input: EngineInput, teamId: string): TeamStats {
     lockedParts,
     spendable: r2(left - locked),
     squad: caps + mine.length,
+    female,
+    femaleRem,
+    femaleReserve: femalePlan.reserve,
+    femaleAvailable: femalePlan.available,
     needTotal,
     shortfall: r2(Math.max(0, needTotal - left)),
+  };
+}
+
+/**
+ * Finds the cheapest way for future female signings to overlap the remaining
+ * category requirements. A female player filling a mandatory category slot
+ * adds no new reserve; any additional female slot reserves that category's
+ * base price.
+ */
+function planFemaleSlots(
+  input: EngineInput,
+  categoryRem: ByCategory,
+  femaleRem: number,
+  excludedPlayerId?: string
+): { reserve: number; extraSlots: number; available: boolean } {
+  if (femaleRem <= 0) return { reserve: 0, extraSlots: 0, available: true };
+
+  const categoryById = new Map(input.categories.map((c) => [c.id, c]));
+  const availableByCategory: ByCategory = {};
+  for (const player of input.players) {
+    if (
+      player.id === excludedPlayerId ||
+      player.status === "SOLD" ||
+      player.gender !== "F" ||
+      !categoryById.has(player.categoryId)
+    ) {
+      continue;
+    }
+    availableByCategory[player.categoryId] =
+      (availableByCategory[player.categoryId] ?? 0) + 1;
+  }
+
+  const options: { cost: number; extra: boolean }[] = [];
+  for (const category of input.categories) {
+    const available = availableByCategory[category.id] ?? 0;
+    const overlap = Math.min(available, categoryRem[category.id] ?? 0);
+    for (let i = 0; i < overlap; i++) {
+      options.push({ cost: 0, extra: false });
+    }
+    for (let i = overlap; i < available; i++) {
+      options.push({ cost: category.basePrice, extra: true });
+    }
+  }
+  options.sort((a, b) => a.cost - b.cost);
+
+  const selected = options.slice(0, femaleRem);
+  return {
+    reserve: r2(selected.reduce((sum, option) => sum + option.cost, 0)),
+    extraSlots: selected.filter((option) => option.extra).length,
+    available: selected.length >= femaleRem,
   };
 }
 
@@ -353,7 +435,8 @@ export function bidLimit(
   input: EngineInput,
   teamId: string,
   categoryId: string,
-  stats?: Map<string, TeamStats>
+  stats?: Map<string, TeamStats>,
+  lot?: { playerId: string; gender: "M" | "F" | null }
 ): BidLimit {
   const all = stats ?? allTeamStats(input);
   const st = all.get(teamId) ?? teamStats(input, teamId);
@@ -368,11 +451,52 @@ export function bidLimit(
   }
 
   const fills = (st.rem[categoryId] ?? 0) > 0;
+  const fillsFemale = lot?.gender === "F" && st.femaleRem > 0;
+  const afterRem = { ...st.rem };
+  if (fills) afterRem[categoryId] = Math.max(0, afterRem[categoryId] - 1);
+  const afterFemaleRem = Math.max(0, st.femaleRem - (fillsFemale ? 1 : 0));
+  const femalePlan = planFemaleSlots(
+    input,
+    afterRem,
+    afterFemaleRem,
+    lot?.playerId
+  );
+
+  if (!femalePlan.available) {
+    return { ok: false, code: "female_pool", max: 0 };
+  }
 
   if (team.maxSquadSize != null) {
-    const totalRem = Object.values(st.rem).reduce((a, n) => a + n, 0);
-    const after = st.squad + 1 + totalRem - (fills ? 1 : 0);
-    if (after > team.maxSquadSize) return { ok: false, code: "full", max: 0 };
+    const totalRem = Object.values(afterRem).reduce((a, n) => a + n, 0);
+    const after = st.squad + 1 + totalRem + femalePlan.extraSlots;
+    if (after > team.maxSquadSize) {
+      return {
+        ok: false,
+        code:
+          lot?.gender !== "F" && afterFemaleRem > 0
+            ? "female"
+            : "full",
+        max: 0,
+      };
+    }
+  }
+
+  if (lot?.gender === "F" && !fillsFemale) {
+    const femalesLeft = input.players.filter(
+      (player) =>
+        player.id !== lot.playerId &&
+        player.status !== "SOLD" &&
+        player.gender === "F"
+    ).length;
+    let othersNeed = 0;
+    for (const otherTeam of input.teams) {
+      if (otherTeam.id === teamId) continue;
+      const other = all.get(otherTeam.id) ?? teamStats(input, otherTeam.id);
+      othersNeed += other.femaleRem;
+    }
+    if (femalesLeft < othersNeed) {
+      return { ok: false, code: "female_reserved", max: 0 };
+    }
   }
 
   if (!fills) {
@@ -390,7 +514,12 @@ export function bidLimit(
     if (avail - 1 < othersNeed) return { ok: false, code: "reserved", max: 0 };
   }
 
-  const holdAll = r2(st.needTotal - (fills ? cat.basePrice : 0));
+  const categoryHold = input.categories.reduce(
+    (sum, category) =>
+      sum + (afterRem[category.id] ?? 0) * category.basePrice,
+    0
+  );
+  const holdAll = r2(categoryHold + femalePlan.reserve);
   const max = r2(st.left - holdAll);
   const holdOpen = r2(holdAll - st.locked);
 
@@ -431,6 +560,9 @@ export function shortReason(code: BidRefusalCode): string {
     closed: "Round not open",
     short: "Can't afford base",
     reserved: "Others need these",
+    female: "Female slots needed",
+    female_reserved: "Others need her",
+    female_pool: "Too few female players",
   };
   return map[code] ?? "Can't bid";
 }
@@ -456,6 +588,12 @@ export function limitReason(
       return `${name} can't pay the ${fmt(cat?.basePrice ?? 0)} base price and still fill its squad.`;
     case "reserved":
       return `${name} already has its minimum ${label} players. The players left are needed to complete the other squads.`;
+    case "female":
+      return `${name} must keep its remaining squad slots for female players.`;
+    case "female_reserved":
+      return `${name} already has its minimum female players. The female players left are needed by the other teams.`;
+    case "female_pool":
+      return `${name} cannot reach the minimum female-player requirement from the players left.`;
     default:
       return `${name} can't bid on this player.`;
   }
@@ -486,7 +624,11 @@ export function checkBid(
     return { ok: false, message: `${team.name} is already leading.` };
   }
 
-  const lim = bidLimit(input, teamId, lot.categoryId, stats);
+  const player = input.players.find((item) => item.id === lot.playerId);
+  const lim = bidLimit(input, teamId, lot.categoryId, stats, {
+    playerId: lot.playerId,
+    gender: player?.gender ?? null,
+  });
   if (!lim.ok) {
     return { ok: false, message: limitReason(input, teamId, lim.code, lot.categoryId) };
   }

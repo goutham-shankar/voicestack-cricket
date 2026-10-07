@@ -14,6 +14,8 @@ export type Player = {
   order: number;
   avatarUrl: string | null;
   role: PlayerRole;
+  /** From the roster sheet's GENDER column. null when the sheet had no value. */
+  gender: "M" | "F" | null;
   categoryId: string;
   basePriceOverride: number | null;
   tagIds: string[];
@@ -32,6 +34,7 @@ export const Players = collection<Player>({
     order: 0,
     avatarUrl: null,
     role: "Batsman",
+    gender: null,
     categoryId: "",
     basePriceOverride: null,
     tagIds: [],

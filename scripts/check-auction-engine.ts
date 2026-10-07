@@ -33,21 +33,37 @@ const REG: EngineCategory = { id: "R", name: "Regular", order: 0, basePrice: 1, 
 const SPE: EngineCategory = { id: "S", name: "Specialist", order: 1, basePrice: 5, minPerTeam: 1, maxPerTeam: 1 };
 const POW: EngineCategory = { id: "P", name: "Power", order: 2, basePrice: 15, minPerTeam: 1, maxPerTeam: 1 };
 const categories = [REG, SPE, POW];
-const settings: EngineSettings = { minSquadSize: 19, bidIncrement: 0.5, captainsCount: true };
+const settings: EngineSettings = {
+  minSquadSize: 19,
+  minFemalePlayers: 0,
+  bidIncrement: 0.5,
+  captainsCount: true,
+};
 
 function team(id: string, over: Partial<EngineTeam> = {}): EngineTeam {
   return { id, name: `Team ${id}`, budget: 100, spent: 0, maxSquadSize: null, ...over };
 }
-function pool(categoryId: string, n: number, from = 0): EnginePlayer[] {
+function pool(
+  categoryId: string,
+  n: number,
+  from = 0,
+  gender: "M" | "F" = "M"
+): EnginePlayer[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `${categoryId}-pool-${from + i}`, name: `P${from + i}`, categoryId,
-    status: "PENDING" as const, teamId: null, price: null,
+    gender, status: "PENDING" as const, teamId: null, price: null,
   }));
 }
-function sold(categoryId: string, n: number, teamId: string, price: number): EnginePlayer[] {
+function sold(
+  categoryId: string,
+  n: number,
+  teamId: string,
+  price: number,
+  gender: "M" | "F" = "M"
+): EnginePlayer[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `${categoryId}-sold-${teamId}-${i}`, name: `S${i}`, categoryId,
-    status: "SOLD" as const, teamId, price,
+    gender, status: "SOLD" as const, teamId, price,
   }));
 }
 
@@ -157,7 +173,12 @@ const openCats: EngineCategory[] = [
   { id: "A", name: "Advanced", order: 2, basePrice: 5000, minPerTeam: 0, maxPerTeam: null },
   { id: "R4", name: "Professional", order: 3, basePrice: 10000, minPerTeam: 0, maxPerTeam: null },
 ];
-const openSettings: EngineSettings = { minSquadSize: 12, bidIncrement: 500, captainsCount: true };
+const openSettings: EngineSettings = {
+  minSquadSize: 12,
+  minFemalePlayers: 0,
+  bidIncrement: 500,
+  captainsCount: true,
+};
 const openMand = mandatorySlots(openCats, openSettings, { B: 0, I: 0, A: 0, R4: 4 });
 eq("filler needs only the remaining 6, not a full 10", openMand.B, 6);
 
@@ -172,6 +193,74 @@ const openInput: EngineInput = {
 const openLimit = bidLimit(openInput, "M", "B");
 eq("a team holding extras can still bid", openLimit.ok, true);
 eq("and its squad fits the cap", 2 + 4 + (openMand.B - 0), 12);
+
+console.log("\n— Female-player minimum —");
+const mixedSettings: EngineSettings = {
+  minSquadSize: 8,
+  minFemalePlayers: 5,
+  bidIncrement: 1,
+  captainsCount: true,
+};
+const mixedInput: EngineInput = {
+  categories: [REG],
+  teams: [team("A", { maxSquadSize: 8 })],
+  settings: mixedSettings,
+  players: [
+    ...pool("R", 10, 0, "M"),
+    ...pool("R", 10, 100, "F"),
+    ...sold("R", 2, "A", 1, "M"),
+  ],
+  openCategoryIds: ["R"],
+  currentCategoryId: "R",
+};
+const mixedStats = teamStats(mixedInput, "A");
+eq("female captain counts toward five", mixedStats.female, 1);
+eq("four auctioned female players remain", mixedStats.femaleRem, 4);
+const maleLot = mixedInput.players.find((player) => player.gender === "M" && player.status !== "SOLD")!;
+const maleLimit = bidLimit(mixedInput, "A", "R", undefined, {
+  playerId: maleLot.id,
+  gender: maleLot.gender,
+});
+eq(
+  "male bid is blocked when all remaining slots are needed for women",
+  maleLimit.ok === false && maleLimit.code,
+  "female"
+);
+const femaleLot = mixedInput.players.find((player) => player.gender === "F")!;
+eq(
+  "female bid remains eligible",
+  bidLimit(mixedInput, "A", "R", undefined, {
+    playerId: femaleLot.id,
+    gender: femaleLot.gender,
+  }).ok,
+  true
+);
+
+const scarceInput: EngineInput = {
+  ...mixedInput,
+  teams: [team("A"), team("B")],
+  settings: { ...mixedSettings, minFemalePlayers: 2 },
+  players: [
+    ...pool("R", 10, 0, "M"),
+    ...pool("R", 1, 100, "F"),
+    ...sold("R", 1, "A", 1, "F"),
+  ],
+};
+const lastFemale = scarceInput.players.find(
+  (player) => player.gender === "F" && player.status !== "SOLD"
+)!;
+const scarceLimit = bidLimit(
+  scarceInput,
+  "A",
+  "R",
+  undefined,
+  { playerId: lastFemale.id, gender: "F" }
+);
+eq(
+  "last female player is reserved for a team still below minimum",
+  scarceLimit.ok === false && scarceLimit.code,
+  "female_reserved"
+);
 
 console.log(failures ? `\n${failures} check(s) FAILED\n` : "\nAll engine checks passed\n");
 process.exit(failures ? 1 : 0);
