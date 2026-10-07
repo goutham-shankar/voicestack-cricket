@@ -926,13 +926,39 @@ function teamsStillNeedingPower(
   return snap.teams.filter((team) => !won.has(team._id));
 }
 
-/** Opens the round with a clean slate of picks. */
+/**
+ * Opens the round with a clean slate of picks.
+ *
+ * The lot on the block has to go back in the pool first, because this round
+ * puts every power player on the board at once and a lot that is still live
+ * would be both on the block and up for offers. A lot that has already drawn
+ * bids is not unwound silently — that is a result the room has watched happen,
+ * so the admin is asked to settle it.
+ */
 export async function startPowerRound() {
   const snap = await loadSnapshot();
   if (!powerCategoryOf(snap)) {
     throw new ServiceError("No power-player category is configured");
   }
+
+  const state = snap.state;
+  if (state.status === "LIVE" && state.currentPlayerId) {
+    const live = snap.playersById.get(state.currentPlayerId);
+    if ((state.bids ?? []).length > 0) {
+      throw new ServiceError(
+        `${live?.name ?? "The live lot"} already has bids — sell or mark them unsold before opening the power round`
+      );
+    }
+    await claimPlayerStatus(state.currentPlayerId, ["LIVE"], {
+      status: "PENDING",
+      soldToTeamId: null,
+      soldPrice: null,
+    });
+    await clearLiveAuctionState(state.currentPlayerId);
+  }
+
   await writePowerRound({ active: true, revealed: false, picks: [] });
+  invalidateSnapshot();
   return getFullState();
 }
 

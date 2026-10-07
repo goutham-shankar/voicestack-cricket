@@ -196,14 +196,22 @@ export function AuctionBoard() {
                 type="button"
                 className="round"
                 aria-current={current ? "step" : undefined}
-                disabled={busy || isLive}
+                // The final round stays reachable while a lot is live: it is
+                // the round whose own players are on the block, so gating it
+                // behind an idle board would make it unopenable.
+                disabled={busy || (isLive && !isPower)}
                 onClick={() =>
                   run(async () => {
-                    const next = await post("/api/auction/round", {
+                    // Opening the power round first clears any live lot, which
+                    // is what lets the round switch below go through — the
+                    // other way round, switching rounds is refused while a
+                    // player is still on the block.
+                    if (isPower) {
+                      await post("/api/auction/power", { action: "start" });
+                    }
+                    return post("/api/auction/round", {
                       categoryId: category._id,
                     });
-                    if (!isPower) return next;
-                    return post("/api/auction/power", { action: "start" });
                   })
                 }
               >
