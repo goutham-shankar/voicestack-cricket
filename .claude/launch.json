@@ -4,9 +4,38 @@
     {
       "name": "cricket-auction-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "cricket-auction-prod-debug",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "cross-env",
+        "NODE_ENV=production",
+        "PORT=3100",
+        "MONGODB_DB=voicestack_debug_scratch",
+        "node",
+        "server.js"
+      ],
+      "port": 3100
+    },
+    {
+      "name": "cricket-auction-scratch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "cross-env",
+        "NODE_ENV=development",
+        "MONGODB_DB=voicestack_debug_scratch",
+        "PORT=3000",
+        "node",
+        "server.js"
+      ],
+      "port": 3000
     }
   ]
 }

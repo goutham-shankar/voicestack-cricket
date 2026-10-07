@@ -58,10 +58,19 @@ export const PHASE_META: Record<
   UNSOLD: { label: "Unsold", tone: "unsold" },
 };
 
-/** Compact Indian-format money for stat strips: 4.8Cr, 25L. */
+const LAKH = 1_00_000;
+const CRORE = 100 * LAKH;
+
+/**
+ * Compact Indian-format money for the display board: 20L, 100L, 1.5Cr, 15Cr.
+ *
+ * Lakhs carry all the way to a crore inclusive, because that is how the room
+ * says it — a 100 Lakh base price is called "100L", never "1 crore". Only
+ * amounts above a crore switch units, so the ladder reads 100L, then 1.5Cr.
+ */
 export function compactMoney(n: number): string {
-  if (n >= 1_00_00_000) return `${(n / 1_00_00_000).toFixed(n % 1_00_00_000 === 0 ? 0 : 1)}Cr`;
-  if (n >= 1_00_000) return `${(n / 1_00_000).toFixed(n % 1_00_000 === 0 ? 0 : 1)}L`;
+  if (n > CRORE) return `${(n / CRORE).toFixed(n % CRORE === 0 ? 0 : 1)}Cr`;
+  if (n >= LAKH) return `${(n / LAKH).toFixed(n % LAKH === 0 ? 0 : 1)}L`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
   return `${n}`;
 }

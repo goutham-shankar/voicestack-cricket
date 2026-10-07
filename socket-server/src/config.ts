@@ -36,6 +36,14 @@ export const config = {
   /** The room every client joins. One auction, one room. */
   room: "auction",
 
-  /** Largest /emit body accepted, in bytes. Broadcasts are tiny by design. */
-  maxBodyBytes: 64 * 1024,
+  /**
+   * Largest /emit body accepted, in bytes.
+   *
+   * `auction:state` carries the whole board — every pending player with its
+   * category and tags populated — so this is not a small payload and it grows
+   * with the player list. A cap below it does not degrade gracefully: the relay
+   * answers 400, `broadcastAuction` only warns, and every screen silently stops
+   * updating until someone reloads. Keep plenty of headroom.
+   */
+  maxBodyBytes: Number(process.env.MAX_BODY_BYTES) || 4 * 1024 * 1024,
 } as const;

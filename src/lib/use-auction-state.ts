@@ -25,10 +25,41 @@ const HIDDEN_POLL_INTERVAL_MS = 10000;
  */
 const FULL_REFRESH_EVERY_MS = 60000;
 
+/**
+ * Is this payload a board the components can actually render?
+ *
+ * Snapshots arrive from two places, and only one of them is a response we just
+ * asked for. The relay replays its last cached `auction:state` to every client
+ * the moment it connects, so a payload can predate the running build — the
+ * tunnel in front of the relay drops regularly, and each reconnect replays
+ * again. The board reads `settings`, `teams[].board` and `categories` without
+ * guarding every access, so a snapshot missing them throws during render, and
+ * a render throw takes the whole page down rather than one panel.
+ *
+ * Checking the shape at the boundary is cheaper than guarding every read, and
+ * it fails in the one place that can do something sensible about it: drop the
+ * payload and keep the state we already had.
+ */
+function isRenderableState(data: unknown): data is FullAuctionState {
+  if (!data || typeof data !== "object") return false;
+  const state = data as Partial<FullAuctionState>;
+  return (
+    Boolean(state.auctionState) &&
+    typeof state.auctionState?.status === "string" &&
+    Boolean(state.settings) &&
+    typeof state.settings?.bidIncrement === "number" &&
+    Array.isArray(state.teams) &&
+    Array.isArray(state.categories) &&
+    Array.isArray(state.pendingPlayers) &&
+    Array.isArray(state.recentSales)
+  );
+}
+
 async function fetchAuctionState(): Promise<FullAuctionState | null> {
   const res = await fetch("/api/auction/state", { cache: "no-store" });
   if (!res.ok) return null;
-  return res.json();
+  const data = await res.json().catch(() => null);
+  return isRenderableState(data) ? data : null;
 }
 
 async function fetchStateVersion(): Promise<string | null> {
@@ -75,8 +106,17 @@ export function useAuctionState({
   onUnsold?: (result: Extract<AuctionResult, { status: "UNSOLD" }>) => void;
 } = {}) {
   const [state, setState] = useState<FullAuctionState | null>(null);
-  const [connected, setConnected] = useState(() => getSocket().connected);
-  const [polling, setPolling] = useState(() => isRealtimeUnavailable());
+  /**
+   * These initialisers run during the server render too, and `getSocket()` is
+   * not a question — it constructs a Socket.IO client and starts dialling. On a
+   * serverless host that leaves every rendering lambda holding a socket that
+   * retries forever against the relay, and it made the first client render
+   * disagree with the server's. The connection belongs in the effect below,
+   * which only ever runs in the browser; both values start at their pre-connect
+   * state and the effect corrects them.
+   */
+  const [connected, setConnected] = useState(false);
+  const [polling, setPolling] = useState(false);
   const onSoldRef = useRef(onSold);
   const onUnsoldRef = useRef(onUnsold);
   const latestRef = useRef<FullAuctionState | null>(null);
@@ -102,23 +142,51 @@ export function useAuctionState({
   useEffect(() => {
     let cancelled = false;
 
+    // First touch of the socket in this process, so it is also where the
+    // connection starts. On a remount it may already be connected, in which
+    // case `connect` will not fire again — adopt its current state here.
     const socket = getSocket();
+    setConnected(socket.connected);
+    setPolling(isRealtimeUnavailable());
 
-    function handleState(data: FullAuctionState) {
+    /**
+     * The relay hands every client the last payload it saw for each event the
+     * instant that client connects, so a projector waking up is not stuck on a
+     * blank board. That replay is not news: it can be older than the snapshot
+     * already on screen, and it repeats a sale announced minutes ago. Because
+     * connecting also triggers the authoritative fetch in `handleConnect`,
+     * nothing from the socket is trusted until that fetch lands.
+     *
+     * The tunnel in front of the relay drops regularly, so this runs on every
+     * reconnect, not only the first connect.
+     */
+    let replaying = false;
+
+    function handleState(data: unknown) {
+      if (!isRenderableState(data)) {
+        console.warn("Ignored an auction:state payload the board cannot render");
+        return;
+      }
       latestRef.current = data;
       setState(data);
     }
     function handleSold(result: Extract<AuctionResult, { status: "SOLD" }>) {
+      if (replaying) return;
       onSoldRef.current?.(result);
     }
     function handleUnsold(result: Extract<AuctionResult, { status: "UNSOLD" }>) {
+      if (replaying) return;
       onUnsoldRef.current?.(result);
     }
     function handleConnect() {
       setConnected(true);
       setPolling(false);
+      replaying = true;
       fetchAuctionState().then((data) => {
-        if (!cancelled && data) handleState(data);
+        if (cancelled) return;
+        if (data) handleState(data);
+        // Whatever arrives from here on is a genuine broadcast, not the replay.
+        replaying = false;
       });
     }
     function handleDisconnect() {
