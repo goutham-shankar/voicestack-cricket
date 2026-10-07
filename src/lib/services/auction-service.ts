@@ -5,6 +5,8 @@ import {
   type AuctionStateDoc,
   type StoredBid,
   type StoredLastResult,
+  type StoredPowerPick,
+  type StoredPowerRound,
 } from "@/models/AuctionState";
 import { AuctionSettingsStore } from "@/models/AuctionSettings";
 import { Players, type PlayerDoc, type PlayerStatus } from "@/models/Player";
@@ -409,6 +411,11 @@ function decorateStateForBoard(snap: AuctionSnapshot, ctx: EngineContext) {
   if (ctx.categories.length) open.add(ctx.categories[0].id);
 
   const bids = state.bids ?? [];
+  const power = state.powerRound ?? {
+    active: false,
+    revealed: false,
+    picks: [],
+  };
 
   return {
     status: state.status,
@@ -422,6 +429,27 @@ function decorateStateForBoard(snap: AuctionSnapshot, ctx: EngineContext) {
     })),
     lotNo: state.lotNo ?? 0,
     lastResult,
+    powerRound: {
+      active: power.active,
+      revealed: power.revealed,
+      // Names are resolved here so the board never has to join picks against
+      // the team list to render an offer.
+      picks: power.picks.flatMap((pick) => {
+        const team = snap.teamsById.get(pick.teamId);
+        const player = snap.playersById.get(pick.playerId);
+        if (!team || !player) return [];
+        return [
+          {
+            teamId: pick.teamId,
+            teamName: team.name,
+            teamLogoUrl: team.logoUrl,
+            playerId: pick.playerId,
+            playerName: player.name,
+            amount: pick.amount,
+          },
+        ];
+      }),
+    },
   };
 }
 
@@ -568,6 +596,31 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
   const lotBasePrice = livePlayer
     ? basePriceOf(livePlayer, livePlayer.categoryId)
     : null;
+
+  // The final round shows all its players at once, including the ones already
+  // won, so this cannot come from `pendingPlayers`.
+  const powerCategory = powerCategoryOf(snap);
+  const powerPlayers = powerCategory
+    ? snap.players
+        .filter((player) => player.categoryId === powerCategory._id)
+        .sort(byRosterOrder)
+        .map((player) => {
+          const owner = player.soldToTeamId
+            ? snap.teamsById.get(player.soldToTeamId)
+            : null;
+          return {
+            _id: player._id,
+            name: player.name,
+            role: player.role,
+            avatarUrl: player.avatarUrl,
+            basePrice: basePriceOf(player, powerCategory),
+            status: player.status,
+            wonByTeamId: player.status === "SOLD" ? (player.soldToTeamId ?? null) : null,
+            wonByTeamName: player.status === "SOLD" ? (owner?.name ?? null) : null,
+            soldPrice: player.status === "SOLD" ? (player.soldPrice ?? null) : null,
+          };
+        })
+    : [];
   const bids: Bid[] = (state.bids ?? []).map((bid) => ({
     teamId: bid.teamId,
     amount: bid.amount,
@@ -596,6 +649,7 @@ async function buildFullState(snapshot?: AuctionSnapshot) {
         ? null
         : engineMinNextBid(bids, lotBasePrice, ctx.input.settings),
     lotBasePrice,
+    powerPlayers,
     settings: snap.settings,
     stats,
   };
@@ -822,6 +876,223 @@ export async function markUnsold() {
     state: fullState,
     result: { status: "UNSOLD" as const, playerName: player.name },
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * The power-player round
+ *
+ * The final round is not called lot by lot. All the power players are on the
+ * board at once; every team names one of them and what it will pay out of
+ * whatever purse it has left. The highest offer takes a contested player, and
+ * the teams that lost pick again from whoever is still free, until all the
+ * power players are allocated.
+ * ------------------------------------------------------------------ */
+
+const POWER_CATEGORY = /power/i;
+
+/** The category holding the power players, or null when none is configured. */
+function powerCategoryOf(snap: AuctionSnapshot): PlayerCategoryDoc | null {
+  return snap.categories.find((c) => POWER_CATEGORY.test(c.name)) ?? null;
+}
+
+function powerRoundOf(snap: AuctionSnapshot): StoredPowerRound {
+  return snap.state.powerRound ?? { active: false, revealed: false, picks: [] };
+}
+
+async function writePowerRound(patch: Partial<StoredPowerRound>) {
+  const state = await getAuctionState();
+  const current = state.powerRound ?? {
+    active: false,
+    revealed: false,
+    picks: [],
+  };
+  await AuctionStateStore.updateById(STATE_ID, {
+    powerRound: { ...current, ...patch },
+  });
+  invalidateSnapshot();
+}
+
+/** Teams that have not yet won a power player, so still owe a pick. */
+function teamsStillNeedingPower(
+  snap: AuctionSnapshot,
+  category: PlayerCategoryDoc
+): TeamDoc[] {
+  const won = new Set(
+    snap.players
+      .filter((p) => p.categoryId === category._id && p.status === "SOLD")
+      .map((p) => p.soldToTeamId)
+      .filter((id): id is string => Boolean(id))
+  );
+  return snap.teams.filter((team) => !won.has(team._id));
+}
+
+/** Opens the round with a clean slate of picks. */
+export async function startPowerRound() {
+  const snap = await loadSnapshot();
+  if (!powerCategoryOf(snap)) {
+    throw new ServiceError("No power-player category is configured");
+  }
+  await writePowerRound({ active: true, revealed: false, picks: [] });
+  return getFullState();
+}
+
+/** Closes the round. Picks are discarded; anything already won stays won. */
+export async function endPowerRound() {
+  await writePowerRound({ active: false, revealed: false, picks: [] });
+  return getFullState();
+}
+
+/** Shows or hides every standing offer on the display board. */
+export async function revealPowerPicks(revealed: boolean) {
+  const snap = await loadSnapshot();
+  if (!powerRoundOf(snap).active) {
+    throw new ServiceError("The power-player round is not open");
+  }
+  await writePowerRound({ revealed });
+  return getFullState();
+}
+
+/**
+ * Records one team's offer, replacing any offer it had already made.
+ *
+ * The cap is the team's own remaining purse rather than the engine's bid
+ * limit: this is the last round, so there are no later slots to hold money
+ * back for.
+ */
+export async function setPowerPick(
+  teamId: string,
+  playerId: string,
+  amount: number
+) {
+  assertId(teamId, "team id");
+  assertId(playerId, "player id");
+  assertMoney(amount, "Offer");
+
+  const snap = await loadSnapshot();
+  const round = powerRoundOf(snap);
+  if (!round.active) throw new ServiceError("The power-player round is not open");
+
+  const category = powerCategoryOf(snap);
+  if (!category) throw new ServiceError("No power-player category is configured");
+
+  const team = snap.teamsById.get(teamId);
+  if (!team) throw new ServiceError("Team not found", 404);
+
+  const player = snap.playersById.get(playerId);
+  if (!player) throw new ServiceError("Player not found", 404);
+  if (player.categoryId !== category._id) {
+    throw new ServiceError(`${player.name} is not a power player`);
+  }
+  if (player.status === "SOLD") {
+    throw new ServiceError(`${player.name} has already been won`);
+  }
+
+  if (!teamsStillNeedingPower(snap, category).some((t) => t._id === teamId)) {
+    throw new ServiceError(`${team.name} already has a power player`);
+  }
+
+  const basePrice = basePriceOf(player, category);
+  if (amount < basePrice) {
+    throw new ServiceError(`Offer must be at least ${fmt(basePrice)}`);
+  }
+
+  const ledger = snap.ledgerByTeam.get(teamId);
+  const remaining = ledger ? ledger.remaining : team.initialBudget;
+  if (amount > remaining + 1e-9) {
+    throw new ServiceError(`${team.name} has only ${fmt(remaining)} left`);
+  }
+
+  const picks = round.picks.filter((pick) => pick.teamId !== teamId);
+  picks.push({ teamId, playerId, amount });
+  await writePowerRound({ picks });
+
+  return getFullState();
+}
+
+/** Withdraws a team's offer so it can choose again. */
+export async function clearPowerPick(teamId: string) {
+  assertId(teamId, "team id");
+  const snap = await loadSnapshot();
+  const round = powerRoundOf(snap);
+  if (!round.active) throw new ServiceError("The power-player round is not open");
+
+  await writePowerRound({
+    picks: round.picks.filter((pick) => pick.teamId !== teamId),
+  });
+  return getFullState();
+}
+
+/**
+ * Awards every contested player to its highest offer, then clears the slate.
+ *
+ * An exact tie is not resolved here: two teams offering the same amount is a
+ * call for the room to make, so this reports it and writes nothing rather than
+ * picking a winner by document order. Every contest is checked before any sale
+ * is written, so a tie late in the list cannot leave the round half resolved.
+ */
+export async function resolvePowerRound() {
+  const snap = await loadSnapshot();
+  const round = powerRoundOf(snap);
+  if (!round.active) throw new ServiceError("The power-player round is not open");
+  if (!round.picks.length) throw new ServiceError("No team has chosen yet");
+
+  const category = powerCategoryOf(snap);
+  if (!category) throw new ServiceError("No power-player category is configured");
+
+  const byPlayer = new Map<string, StoredPowerPick[]>();
+  for (const pick of round.picks) {
+    byPlayer.set(pick.playerId, [...(byPlayer.get(pick.playerId) ?? []), pick]);
+  }
+
+  const winners: StoredPowerPick[] = [];
+  for (const [playerId, picks] of byPlayer) {
+    const best = Math.max(...picks.map((p) => p.amount));
+    const top = picks.filter((p) => p.amount === best);
+    if (top.length > 1) {
+      const player = snap.playersById.get(playerId);
+      const names = top
+        .map((p) => snap.teamsById.get(p.teamId)?.name ?? p.teamId)
+        .join(" and ");
+      throw new ServiceError(
+        `${names} both offered ${fmt(best)} for ${player?.name ?? "that player"} — ask them to re-bid before resolving`
+      );
+    }
+    winners.push(top[0]);
+  }
+
+  const awarded: { playerName: string; teamName: string; amount: number }[] = [];
+  for (const win of winners) {
+    const player = snap.playersById.get(win.playerId);
+    const team = snap.teamsById.get(win.teamId);
+    if (!player || !team) continue;
+
+    const sold = await claimPlayerStatus(
+      player._id,
+      ["PENDING", "UNSOLD", "LIVE"],
+      { status: "SOLD", soldToTeamId: win.teamId, soldPrice: win.amount }
+    );
+    if (!sold) continue;
+
+    await recordTransaction({
+      teamId: win.teamId,
+      type: "DEBIT",
+      amount: -win.amount,
+      note: `Power player ${player.name}`,
+      playerId: player._id,
+    });
+
+    awarded.push({
+      playerName: player.name,
+      teamName: team.name,
+      amount: win.amount,
+    });
+  }
+
+  // Everyone who lost a contest starts again with an empty slate.
+  await writePowerRound({ revealed: false, picks: [] });
+
+  invalidateSnapshot();
+  return { state: await getFullState(), awarded };
 }
 
 /** Turns the display board's final-squads showcase on or off. */

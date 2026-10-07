@@ -9,7 +9,14 @@ import { boardFontClass } from "@/components/auction/board/fonts";
 import { LotBoard } from "@/components/auction/board/lot-board";
 import { PlayerQueue } from "@/components/auction/board/player-queue";
 import { PurseTable } from "@/components/auction/board/purse-table";
+import { PowerRoundPanel } from "@/components/auction/board/power-round";
 import "@/components/auction/board/board.css";
+
+/** One allocation returned by a resolve, for the toast. */
+type Awarded = { playerName: string; teamName: string; amount: number };
+
+/** Matches the final round by name, the same rule the service uses. */
+const POWER_CATEGORY = /power/i;
 
 async function post(url: string, body?: unknown): Promise<FullAuctionState> {
   const res = await fetch(url, {
@@ -134,6 +141,7 @@ export function AuctionBoard() {
 
   const auctionState = state.auctionState;
   const openRounds = new Set(auctionState.openCategoryIds);
+  const powerRound = auctionState.powerRound;
 
   /**
    * Bids are the one action the operator repeats under time pressure, so they
@@ -173,6 +181,9 @@ export function AuctionBoard() {
           {state.categories.map((category, index) => {
             const open = openRounds.has(category._id);
             const current = auctionState.currentCategoryId === category._id;
+            // The final round is not called lot by lot, so its button opens the
+            // power-player console rather than queueing players.
+            const isPower = POWER_CATEGORY.test(category.name);
             const waiting = state.pendingPlayers.filter(
               (player) =>
                 player.status === "PENDING" &&
@@ -187,7 +198,13 @@ export function AuctionBoard() {
                 aria-current={current ? "step" : undefined}
                 disabled={busy || isLive}
                 onClick={() =>
-                  run(() => post("/api/auction/round", { categoryId: category._id }))
+                  run(async () => {
+                    const next = await post("/api/auction/round", {
+                      categoryId: category._id,
+                    });
+                    if (!isPower) return next;
+                    return post("/api/auction/power", { action: "start" });
+                  })
                 }
               >
                 <span className="num" aria-hidden="true">
@@ -195,9 +212,11 @@ export function AuctionBoard() {
                 </span>
                 <span className="rt">{category.name} round</span>
                 <span className="rs">
-                  {open
-                    ? `${fmt(category.defaultBasePrice)} released, ${waiting} waiting`
-                    : `Releases ${fmt(category.defaultBasePrice)} per team`}
+                  {isPower
+                    ? `All ${state.powerPlayers.length} on the board at once`
+                    : open
+                      ? `${fmt(category.defaultBasePrice)} released, ${waiting} waiting`
+                      : `Releases ${fmt(category.defaultBasePrice)} per team`}
                 </span>
               </button>
             );
@@ -213,6 +232,45 @@ export function AuctionBoard() {
         </div>
       )}
 
+      {powerRound.active ? (
+        <section aria-label="Power player round">
+          <PowerRoundPanel
+            state={state}
+            busy={busy}
+            onPick={(teamId, playerId, amount) =>
+              run(() =>
+                post("/api/auction/power", {
+                  action: "pick",
+                  teamId,
+                  playerId,
+                  amount,
+                })
+              )
+            }
+            onClear={(teamId) =>
+              run(() => post("/api/auction/power", { action: "clear", teamId }))
+            }
+            onReveal={(revealed) =>
+              run(() =>
+                post("/api/auction/power", { action: "reveal", revealed })
+              )
+            }
+            onResolve={() =>
+              run(async () => {
+                const next = await post("/api/auction/power", { action: "resolve" });
+                const awarded = (next as unknown as { awarded?: Awarded[] }).awarded;
+                for (const win of awarded ?? []) {
+                  toast.success(`${win.playerName} to ${win.teamName}`, {
+                    description: fmt(win.amount),
+                  });
+                }
+                return next;
+              })
+            }
+            onEnd={() => run(() => post("/api/auction/power", { action: "end" }))}
+          />
+        </section>
+      ) : (
       <div className="stage">
         <section className="board" aria-label="Current player">
           <LotBoard
@@ -243,6 +301,7 @@ export function AuctionBoard() {
           />
         </aside>
       </div>
+      )}
 
       <h2 className="section-title">Team purses</h2>
       <PurseTable state={state} />

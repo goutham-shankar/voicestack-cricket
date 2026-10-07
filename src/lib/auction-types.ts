@@ -95,6 +95,37 @@ export type LastResultDTO = {
   key: string;
 };
 
+/** One team's standing offer for a power player, as the board reads it. */
+export type PowerPickDTO = {
+  teamId: string;
+  teamName: string;
+  teamLogoUrl: string | null;
+  playerId: string;
+  playerName: string;
+  amount: number;
+};
+
+export type PowerRoundDTO = {
+  active: boolean;
+  /** Picks stay hidden on the display until the admin reveals them. */
+  revealed: boolean;
+  picks: PowerPickDTO[];
+};
+
+/** A power player as the final-round board shows them. */
+export type PowerPlayerDTO = {
+  _id: string;
+  name: string;
+  role: string;
+  avatarUrl: string | null;
+  basePrice: number;
+  status: "PENDING" | "LIVE" | "SOLD" | "UNSOLD";
+  /** Set once the player has been won. */
+  wonByTeamId: string | null;
+  wonByTeamName: string | null;
+  soldPrice: number | null;
+};
+
 export type AuctionStateDTO = {
   status: "IDLE" | "LIVE";
   currentPlayerId: PlayerRef | null;
@@ -107,6 +138,7 @@ export type AuctionStateDTO = {
   currentCategoryId: string | null;
   lotNo: number;
   lastResult: LastResultDTO | null;
+  powerRound: PowerRoundDTO;
 };
 
 export type SquadPlayer = {
@@ -171,6 +203,8 @@ export type FullAuctionState = {
   minNextBid: number | null;
   /** Base price of the current lot. */
   lotBasePrice: number | null;
+  /** Every player in the power-player round, whatever their status. */
+  powerPlayers: PowerPlayerDTO[];
 };
 
 export type AuctionResult =

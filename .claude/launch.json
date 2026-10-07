@@ -23,6 +23,19 @@
         "server.js"
       ],
       "port": 3100
+    },
+    {
+      "name": "cricket-auction-scratch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "cross-env",
+        "MONGODB_DB=voicestack_debug_scratch",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "port": 3200,
+      "autoPort": true
     }
   ]
 }

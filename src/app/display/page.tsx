@@ -12,6 +12,7 @@ import {
 import { BidRail, type BidEntry } from "@/components/auction/display/bid-rail";
 import { WaitingStage } from "@/components/auction/display/waiting-stage";
 import { ShowcaseStage } from "@/components/auction/display/showcase-stage";
+import { PowerRoundStage } from "@/components/auction/display/power-round-stage";
 import { StatsStrip, SalesTicker } from "@/components/auction/display/bottom-bar";
 import { ResultOverlay } from "@/components/auction/display/result-overlay";
 import { RoundBanner } from "@/components/auction/display/round-banner";
@@ -206,6 +207,7 @@ function Board({
   );
 
   const showcase = auctionState.showcase === true;
+  const powerRound = auctionState.powerRound;
   const phase = useAuctionPhase(auctionState, flash);
   const urgent = PHASE_META[phase].urgent ?? false;
 
@@ -266,6 +268,16 @@ function Board({
               className="w-full"
             >
               <ShowcaseStage />
+            </motion.div>
+          ) : powerRound.active ? (
+            <motion.div
+              key="power"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.3 } }}
+              className="w-full"
+            >
+              <PowerRoundStage state={state} />
             </motion.div>
           ) : player ? (
             <motion.div

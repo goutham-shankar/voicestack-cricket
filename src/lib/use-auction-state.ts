@@ -57,7 +57,11 @@ function isRenderableState(data: unknown): data is FullAuctionState {
     Array.isArray(state.teams) &&
     Array.isArray(state.categories) &&
     Array.isArray(state.pendingPlayers) &&
-    Array.isArray(state.recentSales)
+    Array.isArray(state.recentSales) &&
+    // Added with the power-player round. A relay replaying a payload from an
+    // older build would otherwise reach the board without it and throw.
+    Boolean(state.auctionState?.powerRound) &&
+    Array.isArray(state.powerPlayers)
   );
 }
 

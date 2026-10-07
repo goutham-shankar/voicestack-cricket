@@ -21,6 +21,26 @@ export type StoredLastResult = {
   key: string;
 };
 
+/**
+ * One team's choice in the power-player round.
+ *
+ * The final round is not called lot by lot: every team picks one power player
+ * and names what it will pay, all five at once, and the highest offer takes a
+ * contested player. A pick is a standing offer until the round is resolved.
+ */
+export type StoredPowerPick = {
+  teamId: string;
+  playerId: string;
+  amount: number;
+};
+
+export type StoredPowerRound = {
+  active: boolean;
+  /** Picks stay hidden on the display until the admin reveals them. */
+  revealed: boolean;
+  picks: StoredPowerPick[];
+};
+
 export type AuctionState = {
   status: AuctionStatus;
   currentPlayerId: string | null;
@@ -35,6 +55,8 @@ export type AuctionState = {
   /** Lot counter, shown on the board as "Lot N". */
   lotNo: number;
   lastResult: StoredLastResult | null;
+  /** The final power-player round. Inactive for the rest of the auction. */
+  powerRound: StoredPowerRound;
 };
 
 export type AuctionStateDoc = Doc<AuctionState>;
@@ -51,5 +73,6 @@ export const AuctionStateStore = collection<AuctionState>({
     bids: [],
     lotNo: 0,
     lastResult: null,
+    powerRound: { active: false, revealed: false, picks: [] },
   }),
 });
