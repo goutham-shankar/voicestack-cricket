@@ -1,7 +1,6 @@
 import { auth } from "@/auth";
-import { connectDB } from "@/lib/db";
-import UserModel from "@/models/User";
-import TeamModel from "@/models/Team";
+import { getTeams } from "@/lib/services/catalog";
+import { listStaffUsers } from "@/lib/services/staff-users";
 import { UsersTable } from "@/components/admin/users/users-table";
 
 function serialize<T>(data: T): T {
@@ -10,15 +9,10 @@ function serialize<T>(data: T): T {
 
 export default async function AdminUsersPage() {
   const session = await auth();
-  await connectDB();
 
   const [users, teams] = await Promise.all([
-    UserModel.find({ role: { $in: ["admin", "auctioneer"] } })
-      .select("name email role teamId")
-      .populate("teamId")
-      .sort({ createdAt: -1 })
-      .lean(),
-    TeamModel.find().sort({ name: 1 }).lean(),
+    listStaffUsers(),
+    getTeams(),
   ]);
 
   return (

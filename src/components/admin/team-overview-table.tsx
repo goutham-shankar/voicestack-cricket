@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import {
   Table,
   TableBody,
@@ -47,10 +48,10 @@ export function TeamOverviewTable({ teams }: { teams: TeamSummary[] }) {
               {team.squadCount}/{team.maxSquadSize}
             </TableCell>
             <TableCell className="tabular-money">
-              ₹{team.spent.toLocaleString("en-IN")}
+              {fmt(team.spent)}
             </TableCell>
             <TableCell className="tabular-money font-medium text-primary">
-              ₹{team.remaining.toLocaleString("en-IN")}
+              {fmt(team.remaining)}
             </TableCell>
             <TableCell className="tabular-nums">{team.slotsRemaining}</TableCell>
           </TableRow>

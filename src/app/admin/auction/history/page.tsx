@@ -1,5 +1,5 @@
-import { connectDB } from "@/lib/db";
-import PlayerModel from "@/models/Player";
+import { Players } from "@/models/Player";
+import { populatePlayersWithTeam } from "@/lib/services/populate";
 import { HistoryTable } from "@/components/admin/history/history-table";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
@@ -9,14 +9,16 @@ function serialize<T>(data: T): T {
 }
 
 export default async function AdminAuctionHistoryPage() {
-  await connectDB();
-
-  const players = await PlayerModel.find({ status: { $in: ["SOLD", "UNSOLD"] } })
-    .populate("categoryId")
-    .populate("tagIds")
-    .populate("soldToTeamId")
-    .sort({ updatedAt: -1 })
-    .lean();
+  const settled = await populatePlayersWithTeam(
+    await Players.find(
+      { status: { $in: ["SOLD", "UNSOLD"] } },
+      { sort: { updatedAt: -1 } }
+    )
+  );
+  const players = settled.filter(
+    (player): player is typeof player & { status: "SOLD" | "UNSOLD" } =>
+      player.status === "SOLD" || player.status === "UNSOLD"
+  );
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,5 @@
+import { fmt } from "@/lib/auction-engine";
 import { auth } from "@/auth";
-import { connectDB } from "@/lib/db";
 import { getUserTeam, getUserTeamId } from "@/lib/session-team";
 import { getTeamLedger, getLedgerSummary } from "@/lib/services/wallet-ledger";
 import { StatCard } from "@/components/stat-card";
@@ -23,7 +23,6 @@ const TYPE_BADGE: Record<string, string> = {
 
 export default async function TeamWalletPage() {
   const session = await auth();
-  await connectDB();
 
   const team = await getUserTeam(session?.user?.id);
   const teamId = await getUserTeamId(session?.user?.id);
@@ -46,17 +45,17 @@ export default async function TeamWalletPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Starting Balance"
-          value={`₹${initialBudget.toLocaleString("en-IN")}`}
+          value={`${fmt(initialBudget)}`}
           icon={PiggyBank}
         />
         <StatCard
           label="Spent"
-          value={`₹${summary.spent.toLocaleString("en-IN")}`}
+          value={`${fmt(summary.spent)}`}
           icon={TrendingDown}
         />
         <StatCard
           label="Remaining Balance"
-          value={`₹${summary.remaining.toLocaleString("en-IN")}`}
+          value={`${fmt(summary.remaining)}`}
           icon={Wallet}
           accent="gold"
         />
@@ -80,7 +79,7 @@ export default async function TeamWalletPage() {
               </TableHeader>
               <TableBody>
                 {ledger.map((txn) => (
-                  <TableRow key={String(txn._id)}>
+                  <TableRow key={txn._id}>
                     <TableCell className="font-medium">{txn.note}</TableCell>
                     <TableCell>
                       <Badge className={TYPE_BADGE[txn.type]}>{txn.type}</Badge>
@@ -92,11 +91,11 @@ export default async function TeamWalletPage() {
                           : "tabular-money text-sold"
                       }
                     >
-                      {txn.amount < 0 ? "-" : "+"}₹
-                      {Math.abs(txn.amount).toLocaleString("en-IN")}
+                      {txn.amount < 0 ? "-" : "+"}
+                      {fmt(Math.abs(txn.amount))}
                     </TableCell>
                     <TableCell className="text-right tabular-money">
-                      ₹{txn.balanceAfter.toLocaleString("en-IN")}
+                      {fmt(txn.balanceAfter)}
                     </TableCell>
                   </TableRow>
                 ))}

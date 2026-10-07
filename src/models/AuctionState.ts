@@ -1,22 +1,55 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/db";
 
 export const AUCTION_STATUSES = ["IDLE", "LIVE"] as const;
 
-const auctionStateSchema = new Schema(
-  {
-    singleton: { type: String, required: true, unique: true, default: "global" },
-    status: { type: String, enum: AUCTION_STATUSES, required: true, default: "IDLE" },
-    currentPlayerId: { type: Schema.Types.ObjectId, ref: "Player", default: null },
-    timerEnabled: { type: Boolean, default: true },
-    timerEndsAt: { type: Date, default: null },
-    timerRemainingMs: { type: Number, default: null },
-    timerPaused: { type: Boolean, default: false },
-    /** Final-squads showcase on the display board, driven by the admin. */
-    showcase: { type: Boolean, default: false },
-  },
-  { timestamps: true }
-);
+export type AuctionStatus = (typeof AUCTION_STATUSES)[number];
 
-export type AuctionState = InferSchemaType<typeof auctionStateSchema>;
+/** One bid on the current lot. Replaced wholesale when a lot opens or closes. */
+export type StoredBid = {
+  teamId: string;
+  amount: number;
+  at: Date;
+};
 
-export default models.AuctionState || model("AuctionState", auctionStateSchema);
+/** The last settled lot, kept so the board can show its SOLD/UNSOLD stamp. */
+export type StoredLastResult = {
+  playerId: string;
+  kind: "SOLD" | "UNSOLD";
+  teamId: string | null;
+  amount: number | null;
+  /** Changes per result, so the stamp animation replays exactly once. */
+  key: string;
+};
+
+export type AuctionState = {
+  status: AuctionStatus;
+  currentPlayerId: string | null;
+  /** Final-squads showcase on the display board, driven by the admin. */
+  showcase: boolean;
+  /** Categories whose round has been opened. The first round is always open. */
+  openCategoryIds: string[];
+  /** The round being auctioned now. */
+  currentCategoryId: string | null;
+  /** Bids on the current lot, oldest first. The last one is the standing bid. */
+  bids: StoredBid[];
+  /** Lot counter, shown on the board as "Lot N". */
+  lotNo: number;
+  lastResult: StoredLastResult | null;
+};
+
+export type AuctionStateDoc = Doc<AuctionState>;
+
+/** A single document, `auctionState/global` — read via `getAuctionState`. */
+export const AuctionStateStore = collection<AuctionState>({
+  name: "auctionState",
+  defaults: () => ({
+    status: "IDLE",
+    currentPlayerId: null,
+    showcase: false,
+    openCategoryIds: [],
+    currentCategoryId: null,
+    bids: [],
+    lotNo: 0,
+    lastResult: null,
+  }),
+});

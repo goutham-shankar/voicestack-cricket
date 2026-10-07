@@ -1,20 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/api-auth";
 import { settingsSchema } from "@/lib/validators/settings";
-import AuctionSettingsModel from "@/models/AuctionSettings";
+import { getSingleton } from "@/lib/db";
+import { AuctionSettingsStore } from "@/models/AuctionSettings";
 
 export async function GET() {
   const { response: unauthorized } = await requireAuth();
   if (unauthorized) return unauthorized;
 
-  await connectDB();
-  const settings = await AuctionSettingsModel.findOneAndUpdate(
-    { singleton: "global" },
-    { $setOnInsert: { singleton: "global" } },
-    { upsert: true, returnDocument: "after" }
-  );
-  return NextResponse.json(settings);
+  return NextResponse.json(await getSingleton(AuctionSettingsStore));
 }
 
 export async function PATCH(req: NextRequest) {
@@ -27,11 +21,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  await connectDB();
-  const settings = await AuctionSettingsModel.findOneAndUpdate(
-    { singleton: "global" },
-    { $set: parsed.data, $setOnInsert: { singleton: "global" } },
-    { upsert: true, returnDocument: "after" }
-  );
+  // Creates the document from its defaults first, so a PATCH works on a fresh DB.
+  await getSingleton(AuctionSettingsStore);
+  const settings = await AuctionSettingsStore.updateById("global", parsed.data);
   return NextResponse.json(settings);
 }

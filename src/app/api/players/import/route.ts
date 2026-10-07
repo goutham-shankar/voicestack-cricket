@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
 import { requireAdmin } from "@/lib/api-auth";
 import { playerSchema } from "@/lib/validators/player";
-import PlayerModel from "@/models/Player";
-import "@/models/PlayerCategory";
-import "@/models/PlayerTag";
+import { Players } from "@/models/Player";
 
 export async function POST(req: NextRequest) {
   const { response: unauthorized } = await requireAdmin();
@@ -38,10 +35,14 @@ export async function POST(req: NextRequest) {
     }
   });
 
-  await connectDB();
+  // Imported rows keep the file's order, appended after the existing roster.
+  const existing = await Players.find();
+  const start = existing.reduce((max, p) => Math.max(max, p.order ?? 0), -1) + 1;
   const created =
     valid.length > 0
-      ? await PlayerModel.insertMany(valid, { ordered: false })
+      ? await Players.createMany(
+          valid.map((row, index) => ({ ...row, order: start + index }))
+        )
       : [];
 
   return NextResponse.json({ created: created.length, errors });

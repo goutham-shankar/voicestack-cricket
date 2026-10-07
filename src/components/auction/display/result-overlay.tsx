@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import type { AuctionResult } from "@/lib/auction-types";
+import { compactMoney } from "@/lib/auction-phase";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -68,7 +69,7 @@ function CountUp({ to, delay = 0 }: { to: number; delay?: number }) {
     };
   }, [to, delay]);
 
-  return <>₹{value.toLocaleString("en-IN")}</>;
+  return <>{compactMoney(value)}</>;
 }
 
 export type WinningTeam = {
@@ -240,7 +241,7 @@ export function ResultOverlay({
             className="tabular-money mt-6 font-black tracking-tighter text-gold"
             style={{ fontSize: "clamp(2.5rem, 6vw, 5.5rem)" }}
           >
-            {result.playerName} — ₹{result.price.toLocaleString("en-IN")}
+            {result.playerName} — {compactMoney(result.price)}
           </motion.p>
         ) : (
           <>

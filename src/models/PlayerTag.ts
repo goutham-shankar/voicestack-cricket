@@ -1,13 +1,14 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/db";
 
-const playerTagSchema = new Schema(
-  {
-    name: { type: String, required: true, trim: true, unique: true },
-    color: { type: String, required: true, default: "#d4a017" },
-  },
-  { timestamps: true }
-);
+export type PlayerTag = {
+  name: string;
+  color: string;
+};
 
-export type PlayerTag = InferSchemaType<typeof playerTagSchema>;
+export type PlayerTagDoc = Doc<PlayerTag>;
 
-export default models.PlayerTag || model("PlayerTag", playerTagSchema);
+export const PlayerTags = collection<PlayerTag>({
+  name: "playerTags",
+  unique: ["name"],
+  defaults: () => ({ name: "", color: "#d4a017" }),
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -39,7 +40,7 @@ export type PlayerRecord = {
   name: string;
   avatarUrl: string | null;
   role: (typeof PLAYER_ROLES)[number];
-  categoryId: { _id: string; name: string; defaultBasePrice: number } | string;
+  categoryId: { _id: string; name: string; defaultBasePrice: number } | string | null;
   basePriceOverride: number | null;
   tagIds: (TagRecord | string)[];
   info: string;
@@ -71,9 +72,9 @@ export function PlayerFormDialog({
     avatarUrl: player?.avatarUrl ?? null,
     role: player?.role ?? PLAYER_ROLES[0],
     categoryId:
-      typeof player?.categoryId === "object"
+      typeof player?.categoryId === "object" && player.categoryId
         ? player.categoryId._id
-        : player?.categoryId ?? "",
+        : ((player?.categoryId as string | null | undefined) ?? ""),
     basePriceOverride: player?.basePriceOverride ?? null,
     tagIds:
       player?.tagIds.map((t) => (typeof t === "object" ? t._id : t)) ?? [],
@@ -241,7 +242,7 @@ export function PlayerFormDialog({
                 <Label htmlFor="override-toggle">Override Base Price</Label>
                 <p className="text-xs text-muted-foreground">
                   {selectedCategory
-                    ? `Category default: ₹${selectedCategory.defaultBasePrice.toLocaleString("en-IN")}`
+                    ? `Category default: ${fmt(selectedCategory.defaultBasePrice)}`
                     : "Choose a category to see its default price"}
                 </p>
               </div>

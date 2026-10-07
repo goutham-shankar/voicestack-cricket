@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -60,7 +61,9 @@ export function PlayersTable({
       if (roleFilter !== ALL && p.role !== roleFilter) return false;
       if (categoryFilter !== ALL) {
         const categoryId =
-          typeof p.categoryId === "object" ? p.categoryId._id : p.categoryId;
+          typeof p.categoryId === "object" && p.categoryId
+            ? p.categoryId._id
+            : p.categoryId;
         if (categoryId !== categoryFilter) return false;
       }
       return true;
@@ -215,7 +218,7 @@ export function PlayersTable({
                     </TableCell>
                     <TableCell>{category?.name ?? "No category"}</TableCell>
                     <TableCell className="tabular-money font-medium text-primary">
-                      ₹{basePrice.toLocaleString("en-IN")}
+                      {fmt(basePrice)}
                     </TableCell>
                     <TableCell>
                       {playerTags.length > 0 ? (

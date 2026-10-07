@@ -244,9 +244,6 @@
 }
 .animate-state-urgent { animation: state-urgent 1s ease-in-out infinite; }
 
-@keyframes countdown-ring {
-  from { stroke-dashoffset: 0; }
-}
 
 @keyframes ticker-scroll {
   from { transform: translateX(0); }

@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, animate } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -212,13 +213,12 @@ export function MoneyFigure({
   spinning?: boolean;
   spinKey?: number;
 }) {
-  const formatted = amount.toLocaleString("en-IN");
+  const formatted = fmt(amount);
   return (
     <span
       className={cn("inline-flex items-center font-black tracking-tight", className)}
       style={style}
     >
-      <span className="mr-[0.1em] leading-none">₹</span>
       {casino ? (
         <CasinoNumber
           value={formatted}
@@ -320,7 +320,7 @@ export function AnimatedBidAmount({
         large ? "items-stretch" : "items-center",
         className
       )}
-      aria-label={`₹${amount.toLocaleString("en-IN")}`}
+      aria-label={`${fmt(amount)}`}
     >
       <div
         className={cn(
@@ -347,7 +347,7 @@ export function AnimatedBidAmount({
                 transition={{ type: "tween", duration: 0.3, ease: "easeOut" }}
                 className={cn("font-bold tabular-money text-sold", deltaSize)}
               >
-                +₹{delta.toLocaleString("en-IN")}
+                +{fmt(delta)}
               </motion.span>
             )}
           </AnimatePresence>

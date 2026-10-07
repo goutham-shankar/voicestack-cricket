@@ -1,15 +1,25 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { collection, type Doc } from "@/lib/db";
 
-const playerCategorySchema = new Schema(
-  {
-    name: { type: String, required: true, trim: true, unique: true },
-    defaultBasePrice: { type: Number, required: true, min: 0 },
-    order: { type: Number, required: true, default: 0 },
-  },
-  { timestamps: true }
-);
+export type PlayerCategory = {
+  name: string;
+  defaultBasePrice: number;
+  order: number;
+  /** Mandatory slots each team must fill in this category. */
+  minPerTeam: number;
+  /** Most a team may hold in this category; null means unlimited. */
+  maxPerTeam: number | null;
+};
 
-export type PlayerCategory = InferSchemaType<typeof playerCategorySchema>;
+export type PlayerCategoryDoc = Doc<PlayerCategory>;
 
-export default models.PlayerCategory ||
-  model("PlayerCategory", playerCategorySchema);
+export const PlayerCategories = collection<PlayerCategory>({
+  name: "playerCategories",
+  unique: ["name"],
+  defaults: () => ({
+    name: "",
+    defaultBasePrice: 0,
+    order: 0,
+    minPerTeam: 0,
+    maxPerTeam: null,
+  }),
+});

@@ -1,0 +1,23 @@
+{
+  "name": "voicestack-socket-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Socket.IO relay for the VoiceStack auction. Broadcasts events the Next.js app pushes to it.",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

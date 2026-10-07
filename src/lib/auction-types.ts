@@ -3,6 +3,10 @@ export type CategoryRef = {
   name: string;
   defaultBasePrice: number;
   order: number;
+  /** Mandatory slots each team must fill in this category. */
+  minPerTeam: number;
+  /** Most a team may hold; null means unlimited. */
+  maxPerTeam: number | null;
 };
 
 export type TagRef = { _id: string; name: string; color: string };
@@ -13,6 +17,36 @@ export type TeamRef = {
   logoUrl: string | null;
   initialBudget: number;
   maxSquadSize: number;
+  captainMale: string;
+  captainFemale: string;
+};
+
+/**
+ * Engine figures for one team, computed server-side so the board does not have
+ * to recompute them. Mirrors `TeamStats` / `BidLimit` in `auction-engine.ts`.
+ */
+export type TeamBoardStats = {
+  /** Purse still unspent. */
+  left: number;
+  /** Money reserved for rounds that have not opened. */
+  locked: number;
+  lockedParts: { categoryId: string; amount: number }[];
+  /** left - locked. */
+  spendable: number;
+  /** Squad size, captains included when they count. */
+  squad: number;
+  /** Players bought per category id. */
+  count: Record<string, number>;
+  /** Mandatory slots per category id. */
+  mand: Record<string, number>;
+  /** Mandatory slots still unfilled per category id. */
+  rem: Record<string, number>;
+  /** Short of being able to finish the squad at base prices. */
+  shortfall: number;
+  /** Max bid for the round in play, or why the team cannot bid. */
+  limit:
+    | { ok: true; max: number; holdAll: number; holdOpen: number; fills: boolean }
+    | { ok: false; code: string; reason: string; max: number };
 };
 
 export type PlayerRef = {
@@ -39,16 +73,37 @@ export type TeamSummary = {
   remaining: number;
   squadCount: number;
   slotsRemaining: number;
+  captainMale: string;
+  captainFemale: string;
+  /** Present whenever categories are configured. */
+  board?: TeamBoardStats;
+};
+
+export type BidEntryDTO = { teamId: string; amount: number; at: string };
+
+export type LastResultDTO = {
+  playerId: string;
+  playerName: string;
+  kind: "SOLD" | "UNSOLD";
+  teamId: string | null;
+  teamName: string | null;
+  amount: number | null;
+  /** Changes per result so the stamp animation replays exactly once. */
+  key: string;
 };
 
 export type AuctionStateDTO = {
   status: "IDLE" | "LIVE";
   currentPlayerId: PlayerRef | null;
-  timerEnabled: boolean;
-  timerEndsAt: string | null;
-  timerRemainingMs: number | null;
-  timerPaused: boolean;
   showcase?: boolean;
+  /** Bids on the current lot, oldest first; the last is the standing bid. */
+  bids: BidEntryDTO[];
+  /** Categories whose round has opened. The first round is always open. */
+  openCategoryIds: string[];
+  /** The round being auctioned now. */
+  currentCategoryId: string | null;
+  lotNo: number;
+  lastResult: LastResultDTO | null;
 };
 
 export type SquadPlayer = {
@@ -81,8 +136,13 @@ export type AuctionStats = {
 };
 
 export type AuctionRuntimeSettings = {
-  timerSeconds: number;
-  minReservePerSlot: number;
+  /** Smallest squad every team must reach, captains included when they count. */
+  minSquadSize: number;
+  /** Fallback step, used only when no tiers are configured. */
+  bidIncrement: number;
+  /** Banded steps: how much a bid must rise by, given what it rises from. */
+  bidIncrementTiers?: { from: number; increment: number }[];
+  captainsCount: boolean;
 };
 
 export type RecentSale = {
@@ -102,6 +162,12 @@ export type FullAuctionState = {
   teams: TeamSummary[];
   settings: AuctionRuntimeSettings;
   stats: AuctionStats;
+  /** Rounds, in order. Empty until categories are configured. */
+  categories: CategoryRef[];
+  /** Smallest acceptable next bid on the current lot. */
+  minNextBid: number | null;
+  /** Base price of the current lot. */
+  lotBasePrice: number | null;
 };
 
 export type AuctionResult =

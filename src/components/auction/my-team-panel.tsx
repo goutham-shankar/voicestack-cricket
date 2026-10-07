@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -14,19 +15,15 @@ type SquadPlayer = {
   categoryId?: { name: string } | null;
 };
 
-export function MyTeamPanel({
-  team,
-  minReservePerSlot = 0,
-}: {
-  team: TeamSummary;
-  minReservePerSlot?: number;
-}) {
+export function MyTeamPanel({ team }: { team: TeamSummary }) {
   const wallet = team.remaining; // cash left after completed purchases
 
-  // Max they could still spend on the next player (keep reserve for remaining slots after)
-  const slotsAfterNextBuy = Math.max(0, team.slotsRemaining - 1);
-  const slotReserve = slotsAfterNextBuy * minReservePerSlot;
-  const maxNextBuy = Math.max(0, wallet - slotReserve);
+  // The auction engine works these out server-side: money locked for rounds
+  // that have not opened, and the most this team may bid in the round in play.
+  const board = team.board;
+  const slotReserve = board?.locked ?? 0;
+  const maxNextBuy = board ? (board.limit.ok ? board.limit.max : 0) : wallet;
+  const blockedReason = board && !board.limit.ok ? board.limit.reason : null;
 
   const budget = team.initialBudget || 1;
   const spentPct = Math.min(100, (team.spent / budget) * 100);
@@ -47,7 +44,7 @@ export function MyTeamPanel({
             {slotReserve > 0 && (
               <>
                 {" "}
-                · keep ₹{slotReserve.toLocaleString("en-IN")} for remaining slots
+                · {fmt(slotReserve)} locked for later rounds
               </>
             )}
           </p>
@@ -68,8 +65,8 @@ export function MyTeamPanel({
           accent="muted"
         />
         <PurseStat
-          label="Max next buy"
-          hint="After slot reserve"
+          label="Max next bid"
+          hint={blockedReason ?? "Keeps the squad fillable"}
           value={maxNextBuy}
           accent="sold"
         />
@@ -80,13 +77,13 @@ export function MyTeamPanel({
           <span>
             Spent{" "}
             <span className="font-medium text-foreground tabular-money">
-              ₹{team.spent.toLocaleString("en-IN")}
+              {fmt(team.spent)}
             </span>
           </span>
           <span>
             Budget{" "}
             <span className="font-medium text-foreground tabular-money">
-              ₹{team.initialBudget.toLocaleString("en-IN")}
+              {fmt(team.initialBudget)}
             </span>
           </span>
         </div>
@@ -125,7 +122,7 @@ function PurseStat({
     <div className="rounded-xl border border-border bg-card/40 px-3 py-3 text-center">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={cn("mt-1 tabular-money text-lg font-semibold", valueClass)}>
-        {empty ? "—" : `₹${value.toLocaleString("en-IN")}`}
+        {empty ? "—" : `${fmt(value)}`}
       </p>
       <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>
     </div>
@@ -200,7 +197,7 @@ export function MySquadList({
             </p>
           </div>
           <p className="tabular-money text-sm font-semibold">
-            ₹{(player.soldPrice ?? 0).toLocaleString("en-IN")}
+            {fmt((player.soldPrice ?? 0))}
           </p>
         </li>
       ))}

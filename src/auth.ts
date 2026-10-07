@@ -1,8 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { connectDB } from "@/lib/db";
-import UserModel from "@/models/User";
+import { Users } from "@/models/User";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
@@ -20,19 +19,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = credentials?.password as string | undefined;
         if (!email || !password) return null;
 
-        await connectDB();
-        const user = await UserModel.findOne({ email: email.toLowerCase() });
+        const user = await Users.findOne({ email: email.toLowerCase() });
         if (!user) return null;
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
 
         return {
-          id: user._id.toString(),
+          id: user._id,
           email: user.email,
           name: user.name,
           role: user.role,
-          teamId: user.teamId ? user.teamId.toString() : null,
+          teamId: user.teamId,
         };
       },
     }),
@@ -49,16 +47,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // without forcing the user to sign out and back in.
       if (token.sub) {
         try {
-          await connectDB();
-          const dbUser = await UserModel.findById(token.sub)
-            .select("role teamId")
-            .lean();
+          const dbUser = await Users.findById(token.sub);
           if (dbUser) {
             token.role = dbUser.role;
-            token.teamId = dbUser.teamId ? String(dbUser.teamId) : null;
+            token.teamId = dbUser.teamId;
           }
         } catch {
-          // Keep existing token claims if DB is briefly unavailable.
+          // Keep existing token claims if the database is briefly unavailable.
         }
       }
 

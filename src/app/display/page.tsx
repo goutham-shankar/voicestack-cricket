@@ -5,28 +5,69 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useAuctionState } from "@/lib/use-auction-state";
 import { IdleMatchBackground } from "@/components/auction/idle-match-background";
 import { BroadcastHeader, VideoScrim } from "@/components/auction/display/broadcast-header";
-import { PlayerStage } from "@/components/auction/display/player-stage";
+import {
+  PlayerIdentity,
+  PlayerPortrait,
+} from "@/components/auction/display/player-stage";
 import { BidRail, type BidEntry } from "@/components/auction/display/bid-rail";
 import { WaitingStage } from "@/components/auction/display/waiting-stage";
 import { ShowcaseStage } from "@/components/auction/display/showcase-stage";
 import { StatsStrip, SalesTicker } from "@/components/auction/display/bottom-bar";
 import { ResultOverlay } from "@/components/auction/display/result-overlay";
-import { useAuctionPhase, useCountdown, PHASE_META } from "@/lib/auction-phase";
+import { RoundBanner } from "@/components/auction/display/round-banner";
+import { useAuctionPhase, PHASE_META } from "@/lib/auction-phase";
 import { BrandLogo } from "@/components/brand-logo";
 import { Volume2 } from "lucide-react";
-import type { AuctionResult } from "@/lib/auction-types";
+import type { AuctionResult, CategoryRef } from "@/lib/auction-types";
+
+
+/** Rounds worth announcing. The general round needs no introduction. */
+const ANNOUNCED_ROUNDS = new Set(["specialist", "power player"]);
+
+const BANNER_MS = 7000;
 
 /**
- * Bids on the current lot.
+ * The round the board has just moved into, while it is worth announcing.
  *
- * This auction is conducted verbally — the service records only the winning
- * team and hammer price, so there is no live bid feed to read. The rail below
- * is wired to accept one: supply `BidEntry[]` here, newest first, and the
- * CURRENT BID figure, highest-bidder crest and recent-bids list light up with
- * no further changes. Until then the rail shows the opening price and an
- * explicit "awaiting first bid" state rather than inventing numbers.
+ * Only a change counts. A projector that joins part-way through a round has
+ * missed the announcement and should not replay it, so the first reading of
+ * the state records where the board already is and announces nothing.
  */
-const LIVE_BIDS: BidEntry[] = [];
+function useRoundAnnouncement(
+  currentCategoryId: string | null,
+  categories: CategoryRef[]
+): CategoryRef | null {
+  const [announced, setAnnounced] = useState<CategoryRef | null>(null);
+  // Undefined until the first reading, which is how "joined mid-round" is told
+  // apart from "the admin just changed the round".
+  const [seen, setSeen] = useState<string | null | undefined>(undefined);
+
+  // Adjusting state during render rather than in an effect: the banner is a
+  // function of the round having changed, so deriving it here avoids a frame
+  // where the new round is on screen without its announcement.
+  if (seen !== currentCategoryId) {
+    setSeen(currentCategoryId);
+    if (seen !== undefined) {
+      const round = categories.find((c) => c._id === currentCategoryId);
+      setAnnounced(
+        round && ANNOUNCED_ROUNDS.has(round.name.trim().toLowerCase())
+          ? round
+          : null
+      );
+    }
+  }
+
+  // Dismissal is its own effect, so a re-render while the banner is up cannot
+  // clear the timer and leave it on screen for good.
+  useEffect(() => {
+    if (!announced) return;
+    const timer = setTimeout(() => setAnnounced(null), BANNER_MS);
+    return () => clearTimeout(timer);
+  }, [announced]);
+
+  return announced;
+}
+
 
 export default function DisplayPage() {
   const [flash, setFlash] = useState<AuctionResult | null>(null);
@@ -156,17 +197,42 @@ function Board({
   state: NonNullable<ReturnType<typeof useAuctionState>["state"]>;
   flash: AuctionResult | null;
 }) {
-  const { auctionState, stats, settings, recentSales } = state;
+  const { auctionState, stats, recentSales } = state;
   const player = auctionState.currentPlayerId;
 
+  const announcedRound = useRoundAnnouncement(
+    auctionState.currentCategoryId,
+    state.categories
+  );
+
   const showcase = auctionState.showcase === true;
-  const secondsLeft = useCountdown(auctionState);
-  const phase = useAuctionPhase(auctionState, flash, secondsLeft);
+  const phase = useAuctionPhase(auctionState, flash);
   const urgent = PHASE_META[phase].urgent ?? false;
 
   const basePrice = player
     ? (player.basePriceOverride ?? player.categoryId?.defaultBasePrice ?? 0)
     : 0;
+
+  /**
+   * Bids on the current lot, newest first, with each bidder's crest resolved
+   * from the live team list. This drives the CURRENT BID figure, the
+   * highest-bidder panel and the recent-bids list; an empty list leaves the
+   * rail on the opening price and its explicit "awaiting first bid" state.
+   */
+  const liveBids = useMemo<BidEntry[]>(() => {
+    const teamsById = new Map(state.teams.map((t) => [t._id, t]));
+    return [...auctionState.bids]
+      .reverse()
+      .map((bid, index) => {
+        const team = teamsById.get(bid.teamId);
+        return {
+          id: `${bid.teamId}-${bid.amount}-${index}`,
+          amount: bid.amount,
+          teamName: team?.name ?? "Unknown team",
+          teamLogoUrl: team?.logoUrl ?? null,
+        };
+      });
+  }, [auctionState.bids, state.teams]);
 
   // AuctionResult carries only the team name, so resolve the crest and the
   // post-purchase wallet from the live team list.
@@ -207,15 +273,14 @@ function Board({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.3 } }}
-              className="grid w-full grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-center gap-12 xl:gap-20"
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-8 xl:gap-12"
             >
-              <PlayerStage player={player} phase={phase} />
+              <PlayerIdentity player={player} phase={phase} />
+              <PlayerPortrait player={player} phase={phase} />
               <BidRail
                 phase={phase}
-                bids={LIVE_BIDS}
+                bids={liveBids}
                 basePrice={basePrice}
-                secondsLeft={auctionState.timerEnabled ? secondsLeft : null}
-                timerTotal={settings.timerSeconds}
                 soldPrice={flash?.status === "SOLD" ? flash.price : null}
                 soldTeam={winningTeam}
               />
@@ -230,6 +295,12 @@ function Board({
         <StatsStrip stats={stats} />
         <SalesTicker sales={recentSales} />
       </div>
+
+      <AnimatePresence>
+        {announcedRound && (
+          <RoundBanner key={`round-${announcedRound._id}`} round={announcedRound} />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {flash && (

@@ -2,8 +2,8 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import bcrypt from "bcryptjs";
-import mongoose from "mongoose";
-import UserModel from "../src/models/User";
+import { closeDb } from "../src/lib/mongo";
+import { Users } from "../src/models/User";
 
 const ADMINS = [
   { email: "visakhp@voicestack.com", name: "Visakh P", password: "visakh@1223" },
@@ -13,28 +13,23 @@ const ADMINS = [
 ];
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("Missing MONGODB_URI");
+  const removed = await Users.deleteMany();
+  console.log(`Removed ${removed} existing user(s)`);
 
-  await mongoose.connect(uri);
-
-  const removed = await UserModel.deleteMany({});
-  console.log(`Removed ${removed.deletedCount} existing user(s)`);
-
-  for (const a of ADMINS) {
-    await UserModel.create({
-      email: a.email,
-      passwordHash: await bcrypt.hash(a.password, 10),
+  for (const admin of ADMINS) {
+    await Users.create({
+      email: admin.email,
+      passwordHash: await bcrypt.hash(admin.password, 10),
       role: "admin",
-      name: a.name,
+      name: admin.name,
     });
-    console.log(`Created admin: ${a.email} / ${a.password}`);
+    console.log(`Created admin: ${admin.email} / ${admin.password}`);
   }
-
-  await mongoose.disconnect();
 }
 
-main().catch((err) => {
+main()
+  .catch((err) => {
   console.error(err);
   process.exit(1);
-});
+  })
+  .finally(() => closeDb());

@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -62,7 +63,8 @@ export function CategoriesPanel({
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Default Base Price</TableHead>
-                <TableHead>Order</TableHead>
+                <TableHead>Round</TableHead>
+                <TableHead>Per Team</TableHead>
                 <TableHead className="w-24 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -71,9 +73,13 @@ export function CategoriesPanel({
                 <TableRow key={cat._id}>
                   <TableCell className="font-medium">{cat.name}</TableCell>
                   <TableCell className="tabular-money">
-                    ₹{cat.defaultBasePrice.toLocaleString("en-IN")}
+                    {fmt(cat.defaultBasePrice)}
                   </TableCell>
                   <TableCell>{cat.order}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    min {cat.minPerTeam ?? 0} · max{" "}
+                    {cat.maxPerTeam == null ? "unlimited" : cat.maxPerTeam}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <CategoryFormDialog

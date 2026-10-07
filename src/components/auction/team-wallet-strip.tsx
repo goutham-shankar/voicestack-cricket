@@ -2,6 +2,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import type { TeamSummary } from "@/lib/auction-types";
 
+/**
+ * Who is in the room and how much room they have left in their squad.
+ *
+ * Deliberately no purse figure: the admin reads those from the purse table on
+ * the board, and a franchise reads its own from its team panel. Rivals'
+ * balances are not part of this strip.
+ */
 export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
   if (teams.length === 0) {
     return (
@@ -28,9 +35,6 @@ export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
             </Avatar>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{team.name}</p>
-              <p className="tabular-money text-xs font-medium text-foreground">
-                ₹{team.remaining.toLocaleString("en-IN")}
-              </p>
               <p
                 className={cn(
                   "text-[10px] font-medium uppercase tracking-wide",
