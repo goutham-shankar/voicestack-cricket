@@ -984,3 +984,38 @@ export async function requeuePlayer(playerId: string) {
   invalidateSnapshot();
   return getFullState();
 }
+
+/** Exactly what the board endpoint returns, so scoping cannot drift from it. */
+type BoardState = Awaited<ReturnType<typeof getFullState>>;
+
+/**
+ * Removes the wallet figures a viewer is not entitled to.
+ *
+ * The admin runs the board and needs every purse to judge a bid. A franchise
+ * sees its own and no one else's. The auctioneer holds no team, so sees none.
+ *
+ * This runs on the server rather than in the components because the board's
+ * state is a JSON response: hiding a rival's purse only in the markup would
+ * still hand it to anyone who opens the network tab, which in a room full of
+ * captains with laptops is no protection at all.
+ */
+export function scopeWalletsForViewer(
+  state: BoardState,
+  viewer: { role: "admin" | "auctioneer" | "team"; teamId?: string | null }
+): BoardState {
+  if (viewer.role === "admin") return state;
+
+  return {
+    ...state,
+    teams: state.teams.map((team) => {
+      if (viewer.role === "team" && viewer.teamId && team._id === viewer.teamId) {
+        return team;
+      }
+      // Squad counts stay: who holds how many players is public in the room.
+      // `board` carries the spend limit and the locked money, so it goes too.
+      const scoped = { ...team, spent: 0, remaining: 0 };
+      if ("board" in scoped) delete (scoped as { board?: unknown }).board;
+      return scoped;
+    }),
+  };
+}
