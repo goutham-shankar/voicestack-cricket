@@ -40,8 +40,18 @@ export function tokens(name: string): string[] {
   return out;
 }
 
+/**
+ * Sheet names that no rule can reach, because the card uses a different
+ * surname entirely. Each is confirmed by the employee ID the card filename
+ * carries, which the sheet also lists:
+ *   Arjun S = Arjun Sathyan, both employee 12576.
+ */
+const ALIASES: Record<string, string> = {
+  "Arjun S": "Arjun Sathyan",
+};
+
 export function key(name: string): string {
-  return tokens(name).join("");
+  return tokens(ALIASES[name.trim()] ?? name).join("");
 }
 
 function distance(a: string, b: string): number {
@@ -106,7 +116,7 @@ export function matchAll(
 
       const hits = [...remaining.values()].filter((p) => {
         const pk = key(p.name);
-        const pt = tokens(p.name);
+        const pt = tokens(ALIASES[p.name.trim()] ?? p.name);
         if (how === "exact") return pk === c.label_key;
         if (how === "prefix") {
           // Sheet names are often shortened: "Jeffin" for "Jeffin Idiculla

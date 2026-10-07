@@ -58,6 +58,9 @@ async function main() {
   await AuctionStateStore.updateById("global", {
     status: "IDLE",
     currentPlayerId: null,
+    showcase: false,
+    openCategoryIds: [],
+    currentCategoryId: null,
     bids: [],
     lastResult: null,
     lotNo: 0,

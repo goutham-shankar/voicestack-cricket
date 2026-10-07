@@ -76,11 +76,22 @@ async function main() {
     }
   }
 
+  // The output directory is rebuilt from scratch, so a player this run did
+  // not match has no file left behind — clear the URL rather than leave it
+  // pointing at an image that is gone.
+  let cleared = 0;
+  for (const p of unmatchedPlayers) {
+    if (!p.avatarUrl) continue;
+    if (!dryRun) await Players.updateById(p._id, { avatarUrl: null });
+    cleared++;
+  }
+
   console.log(dryRun ? "\nDRY RUN — nothing written\n" : "");
   console.log(`matched   ${matches.length} of ${players.length} players`);
   if (!dryRun) {
     console.log(`converted ${converted} image(s) into public/players/`);
     console.log(`updated   ${updated} player record(s)`);
+    console.log(`cleared   ${cleared} stale avatar URL(s)`);
   }
 
   const realMissing = unmatchedPlayers.filter((p) => !p.name.startsWith("ZZ Test"));
