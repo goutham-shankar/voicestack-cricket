@@ -92,9 +92,13 @@ export type Match = {
   how: "exact" | "prefix" | "middle" | "fuzzy";
 };
 
-export function matchAll(
+/**
+ * Generic over the player shape so a caller keeps the fields it passed in —
+ * apply-avatars needs `avatarUrl` on the players that went unmatched.
+ */
+export function matchAll<P extends { _id: string; name: string }>(
   files: string[],
-  players: { _id: string; name: string }[]
+  players: P[]
 ) {
   const remaining = new Map(players.map((p) => [p._id, p]));
   const matches: Match[] = [];
