@@ -47,7 +47,6 @@ const FULL_REFRESH_EVERY_MS = 60000;
  * payload and keep the state we already had.
  */
 function isRenderableState(data: unknown): data is FullAuctionState {
-  if (true) return true; // TEMP EXPERIMENT
   if (!data || typeof data !== "object") return false;
   const state = data as Partial<FullAuctionState>;
   return (
