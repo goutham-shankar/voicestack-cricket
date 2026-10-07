@@ -14,10 +14,59 @@ import { WaitingStage } from "@/components/auction/display/waiting-stage";
 import { ShowcaseStage } from "@/components/auction/display/showcase-stage";
 import { StatsStrip, SalesTicker } from "@/components/auction/display/bottom-bar";
 import { ResultOverlay } from "@/components/auction/display/result-overlay";
+import { RoundBanner } from "@/components/auction/display/round-banner";
 import { useAuctionPhase, PHASE_META } from "@/lib/auction-phase";
 import { BrandLogo } from "@/components/brand-logo";
 import { Volume2 } from "lucide-react";
-import type { AuctionResult } from "@/lib/auction-types";
+import type { AuctionResult, CategoryRef } from "@/lib/auction-types";
+
+
+/** Rounds worth announcing. The general round needs no introduction. */
+const ANNOUNCED_ROUNDS = new Set(["specialist", "power player"]);
+
+const BANNER_MS = 7000;
+
+/**
+ * The round the board has just moved into, while it is worth announcing.
+ *
+ * Only a change counts. A projector that joins part-way through a round has
+ * missed the announcement and should not replay it, so the first reading of
+ * the state records where the board already is and announces nothing.
+ */
+function useRoundAnnouncement(
+  currentCategoryId: string | null,
+  categories: CategoryRef[]
+): CategoryRef | null {
+  const [announced, setAnnounced] = useState<CategoryRef | null>(null);
+  // Undefined until the first reading, which is how "joined mid-round" is told
+  // apart from "the admin just changed the round".
+  const [seen, setSeen] = useState<string | null | undefined>(undefined);
+
+  // Adjusting state during render rather than in an effect: the banner is a
+  // function of the round having changed, so deriving it here avoids a frame
+  // where the new round is on screen without its announcement.
+  if (seen !== currentCategoryId) {
+    setSeen(currentCategoryId);
+    if (seen !== undefined) {
+      const round = categories.find((c) => c._id === currentCategoryId);
+      setAnnounced(
+        round && ANNOUNCED_ROUNDS.has(round.name.trim().toLowerCase())
+          ? round
+          : null
+      );
+    }
+  }
+
+  // Dismissal is its own effect, so a re-render while the banner is up cannot
+  // clear the timer and leave it on screen for good.
+  useEffect(() => {
+    if (!announced) return;
+    const timer = setTimeout(() => setAnnounced(null), BANNER_MS);
+    return () => clearTimeout(timer);
+  }, [announced]);
+
+  return announced;
+}
 
 
 export default function DisplayPage() {
@@ -151,6 +200,11 @@ function Board({
   const { auctionState, stats, recentSales } = state;
   const player = auctionState.currentPlayerId;
 
+  const announcedRound = useRoundAnnouncement(
+    auctionState.currentCategoryId,
+    state.categories
+  );
+
   const showcase = auctionState.showcase === true;
   const phase = useAuctionPhase(auctionState, flash);
   const urgent = PHASE_META[phase].urgent ?? false;
@@ -241,6 +295,12 @@ function Board({
         <StatsStrip stats={stats} />
         <SalesTicker sales={recentSales} />
       </div>
+
+      <AnimatePresence>
+        {announcedRound && (
+          <RoundBanner key={`round-${announcedRound._id}`} round={announcedRound} />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {flash && (
