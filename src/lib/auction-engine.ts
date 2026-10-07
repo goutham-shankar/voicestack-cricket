@@ -163,9 +163,33 @@ export function r2(x: number): number {
  * Amount display, in this app's Indian grouping. Decimals only show when the
  * value actually has them, so whole rupees stay clean.
  */
+const LAKH = 1_00_000;
+const CRORE = 100 * LAKH;
+
+/** At most two decimals, with no trailing zeros: 20, 1.5, 53.15. */
+function trim(value: number): string {
+  return String(Math.round(value * 100) / 100);
+}
+
+/**
+ * Money as the room says it: 20L, 100L, 1.5Cr.
+ *
+ * Lakhs run to a crore inclusive, because a 100 Lakh base price is called
+ * "100L" and never "1 crore"; only amounts above a crore change unit. This is
+ * the one money formatter in the app — the board, the admin tables, the
+ * ledgers and the display all read from here, so they cannot drift apart.
+ */
 export function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined || !isFinite(n)) return "–";
-  return r2(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+  const value = r2(n);
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+
+  if (abs > CRORE) return `${sign}${trim(abs / CRORE)}Cr`;
+  if (abs >= LAKH) return `${sign}${trim(abs / LAKH)}L`;
+  if (abs >= 1000) return `${sign}${trim(abs / 1000)}K`;
+  return `${sign}${trim(abs)}`;
 }
 
 /** Categories in round order. */

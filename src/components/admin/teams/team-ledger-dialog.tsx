@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useState } from "react";
 import {
   Dialog,
@@ -95,10 +96,10 @@ export function TeamLedgerDialog({
                     }
                   >
                     {txn.amount < 0 ? "-" : "+"}
-                    {Math.abs(txn.amount).toLocaleString("en-IN")}
+                    {fmt(Math.abs(txn.amount))}
                   </p>
                   <p className="tabular-money text-xs text-muted-foreground">
-                    {txn.balanceAfter.toLocaleString("en-IN")}
+                    {fmt(txn.balanceAfter)}
                   </p>
                 </div>
               </div>

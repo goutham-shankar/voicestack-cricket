@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -43,7 +44,7 @@ export function AuctionRoom({
   const { state, connected } = useAuctionState({
     onSold: (result) => {
       toast.success(`${result.playerName} SOLD to ${result.teamName}`, {
-        description: `${result.price.toLocaleString("en-IN")}`,
+        description: `${fmt(result.price)}`,
       });
       if (myTeam) setSquadRefreshKey((k) => k + 1);
     },

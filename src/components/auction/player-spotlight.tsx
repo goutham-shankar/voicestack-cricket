@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Gavel } from "lucide-react";
@@ -40,7 +41,7 @@ export function PlayerSpotlight({ player }: { player: PlayerRef | null }) {
           Base Price
         </p>
         <p className="text-xl font-bold tabular-money text-primary">
-          {basePrice.toLocaleString("en-IN")}
+          {fmt(basePrice)}
         </p>
       </div>
 

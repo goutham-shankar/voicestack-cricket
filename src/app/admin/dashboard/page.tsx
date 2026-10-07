@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import { getFullState } from "@/lib/services/auction-service";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,7 @@ export default async function AdminDashboardPage() {
         <StatCard label="Remaining" value={stats.remaining} icon={Gavel} />
         <StatCard
           label="Total Spent"
-          value={`${stats.totalSpent.toLocaleString("en-IN")}`}
+          value={`${fmt(stats.totalSpent)}`}
           icon={Wallet}
         />
       </div>

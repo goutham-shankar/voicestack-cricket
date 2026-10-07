@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -173,7 +174,7 @@ export function ControlPanel({
                           {p.categoryId?.name ?? "—"}
                         </TableCell>
                         <TableCell className="tabular-money text-right text-sm font-medium">
-                          {base.toLocaleString("en-IN")}
+                          {fmt(base)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -260,7 +261,7 @@ export function ControlPanel({
                 <SelectContent>
                   {state.teams.map((t) => (
                     <SelectItem key={t._id} value={t._id}>
-                      {t.name} · {t.remaining.toLocaleString("en-IN")} left
+                      {t.name} · {fmt(t.remaining)} left
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -282,7 +283,7 @@ export function ControlPanel({
           {sellTeam && priceValid && priceValue > sellTeam.remaining && (
             <p className="text-xs text-destructive">
               Exceeds {sellTeam.name}&apos;s remaining wallet of
-              {sellTeam.remaining.toLocaleString("en-IN")}.
+              {fmt(sellTeam.remaining)}.
             </p>
           )}
 

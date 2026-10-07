@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import {
   Table,
   TableBody,
@@ -73,14 +74,14 @@ export function HistoryTable({ players }: { players: PlayerRow[] }) {
                       </div>
                     </TableCell>
                     <TableCell className="tabular-money">
-                      {basePrice.toLocaleString("en-IN")}
+                      {fmt(basePrice)}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={player.status} />
                     </TableCell>
                     <TableCell className="tabular-money font-medium text-primary">
                       {player.soldPrice != null
-                        ? `${player.soldPrice.toLocaleString("en-IN")}`
+                        ? `${fmt(player.soldPrice)}`
                         : "—"}
                     </TableCell>
                     <TableCell>{player.soldToTeamId?.name ?? "—"}</TableCell>

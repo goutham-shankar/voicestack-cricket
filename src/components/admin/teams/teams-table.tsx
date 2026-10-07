@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -74,7 +75,7 @@ export function TeamsTable({ initialTeams }: { initialTeams: TeamRecord[] }) {
                     </div>
                   </TableCell>
                   <TableCell className="tabular-money">
-                    {team.initialBudget.toLocaleString("en-IN")}
+                    {fmt(team.initialBudget)}
                   </TableCell>
                   <TableCell>{team.maxSquadSize}</TableCell>
                   <TableCell>

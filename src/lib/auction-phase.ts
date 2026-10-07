@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import { useEffect, useState } from "react";
 import type { AuctionStateDTO, AuctionResult } from "@/lib/auction-types";
 
@@ -58,19 +59,10 @@ export const PHASE_META: Record<
   UNSOLD: { label: "Unsold", tone: "unsold" },
 };
 
-const LAKH = 1_00_000;
-const CRORE = 100 * LAKH;
-
 /**
- * Compact Indian-format money for the display board: 20L, 100L, 1.5Cr, 15Cr.
- *
- * Lakhs carry all the way to a crore inclusive, because that is how the room
- * says it — a 100 Lakh base price is called "100L", never "1 crore". Only
- * amounts above a crore switch units, so the ladder reads 100L, then 1.5Cr.
+ * Kept as a name the display components already import; the formatting itself
+ * lives in auction-engine's `fmt`, so there is one money format in the app.
  */
 export function compactMoney(n: number): string {
-  if (n > CRORE) return `${(n / CRORE).toFixed(n % CRORE === 0 ? 0 : 1)}Cr`;
-  if (n >= LAKH) return `${(n / LAKH).toFixed(n % LAKH === 0 ? 0 : 1)}L`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-  return `${n}`;
+  return fmt(n);
 }

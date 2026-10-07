@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import { auth } from "@/auth";
 import { getUserTeam, getUserTeamId } from "@/lib/session-team";
 import { getTeamLedger, getLedgerSummary } from "@/lib/services/wallet-ledger";
@@ -44,17 +45,17 @@ export default async function TeamWalletPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Starting Balance"
-          value={`${initialBudget.toLocaleString("en-IN")}`}
+          value={`${fmt(initialBudget)}`}
           icon={PiggyBank}
         />
         <StatCard
           label="Spent"
-          value={`${summary.spent.toLocaleString("en-IN")}`}
+          value={`${fmt(summary.spent)}`}
           icon={TrendingDown}
         />
         <StatCard
           label="Remaining Balance"
-          value={`${summary.remaining.toLocaleString("en-IN")}`}
+          value={`${fmt(summary.remaining)}`}
           icon={Wallet}
           accent="gold"
         />
@@ -91,10 +92,10 @@ export default async function TeamWalletPage() {
                       }
                     >
                       {txn.amount < 0 ? "-" : "+"}
-                      {Math.abs(txn.amount).toLocaleString("en-IN")}
+                      {fmt(Math.abs(txn.amount))}
                     </TableCell>
                     <TableCell className="text-right tabular-money">
-                      {txn.balanceAfter.toLocaleString("en-IN")}
+                      {fmt(txn.balanceAfter)}
                     </TableCell>
                   </TableRow>
                 ))}

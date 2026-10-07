@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -26,7 +27,7 @@ type SettingsDoc = {
 function money(n: number): string {
   if (n >= 1_00_00_000) return `${+(n / 1_00_00_000).toFixed(2)}Cr`;
   if (n >= 1_00_000) return `${+(n / 1_00_000).toFixed(2)}L`;
-  return n.toLocaleString("en-IN");
+  return fmt(n);
 }
 
 export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc }) {

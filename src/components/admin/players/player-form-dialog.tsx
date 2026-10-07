@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -241,7 +242,7 @@ export function PlayerFormDialog({
                 <Label htmlFor="override-toggle">Override Base Price</Label>
                 <p className="text-xs text-muted-foreground">
                   {selectedCategory
-                    ? `Category default: ${selectedCategory.defaultBasePrice.toLocaleString("en-IN")}`
+                    ? `Category default: ${fmt(selectedCategory.defaultBasePrice)}`
                     : "Choose a category to see its default price"}
                 </p>
               </div>

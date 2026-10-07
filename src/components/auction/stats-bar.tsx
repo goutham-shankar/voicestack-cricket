@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import { StatCard } from "@/components/stat-card";
 import { Users, Trophy, Gavel, Wallet, TrendingUp, Circle } from "lucide-react";
 import type { AuctionStats } from "@/lib/auction-types";
@@ -11,12 +12,12 @@ export function StatsBar({ stats }: { stats: AuctionStats }) {
       <StatCard label="Remaining" value={stats.remaining} icon={Gavel} accent="gold" />
       <StatCard
         label="Total Spent"
-        value={`${stats.totalSpent.toLocaleString("en-IN")}`}
+        value={`${fmt(stats.totalSpent)}`}
         icon={Wallet}
       />
       <StatCard
         label="Highest Sale"
-        value={`${stats.highestSale.toLocaleString("en-IN")}`}
+        value={`${fmt(stats.highestSale)}`}
         icon={TrendingUp}
         accent="gold"
       />

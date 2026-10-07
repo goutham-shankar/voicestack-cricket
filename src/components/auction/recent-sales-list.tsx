@@ -1,3 +1,4 @@
+import { fmt } from "@/lib/auction-engine";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { RecentSale } from "@/lib/auction-types";
@@ -37,7 +38,7 @@ export function RecentSalesList({ sales }: { sales: RecentSale[] }) {
               </p>
             </div>
             <span className="tabular-money shrink-0 font-semibold text-sold">
-              {sale.price.toLocaleString("en-IN")}
+              {fmt(sale.price)}
             </span>
           </div>
         ))}

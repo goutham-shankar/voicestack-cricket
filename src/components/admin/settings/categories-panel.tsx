@@ -1,5 +1,6 @@
 "use client";
 
+import { fmt } from "@/lib/auction-engine";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -72,7 +73,7 @@ export function CategoriesPanel({
                 <TableRow key={cat._id}>
                   <TableCell className="font-medium">{cat.name}</TableCell>
                   <TableCell className="tabular-money">
-                    {cat.defaultBasePrice.toLocaleString("en-IN")}
+                    {fmt(cat.defaultBasePrice)}
                   </TableCell>
                   <TableCell>{cat.order}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
