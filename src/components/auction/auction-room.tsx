@@ -185,7 +185,10 @@ export function AuctionRoom({
           <CardTitle className="text-base">Teams</CardTitle>
         </CardHeader>
         <CardContent>
-          <TeamWalletStrip teams={viewState.teams} />
+          <TeamWalletStrip
+            teams={viewState.teams}
+            showBalance={role !== "auctioneer"}
+          />
         </CardContent>
       </Card>
     </div>

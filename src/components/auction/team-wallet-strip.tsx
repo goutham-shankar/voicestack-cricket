@@ -2,7 +2,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import type { TeamSummary } from "@/lib/auction-types";
 
-export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
+export function TeamWalletStrip({
+  teams,
+  showBalance = true,
+}: {
+  teams: TeamSummary[];
+  /** The auctioneer watches the room without the purses in front of them. */
+  showBalance?: boolean;
+}) {
   if (teams.length === 0) {
     return (
       <p className="py-4 text-center text-sm text-muted-foreground">
@@ -28,9 +35,11 @@ export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
             </Avatar>
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{team.name}</p>
-              <p className="tabular-money text-xs font-medium text-foreground">
-                {team.remaining.toLocaleString("en-IN")}
-              </p>
+              {showBalance && (
+                <p className="tabular-money text-xs font-medium text-foreground">
+                  {team.remaining.toLocaleString("en-IN")}
+                </p>
+              )}
               <p
                 className={cn(
                   "text-[10px] font-medium uppercase tracking-wide",
