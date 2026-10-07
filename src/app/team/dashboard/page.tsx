@@ -8,7 +8,8 @@ import { getSingleton } from "@/lib/db";
 import { AuctionSettingsStore } from "@/models/AuctionSettings";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Users2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Users2, Download } from "lucide-react";
 
 /**
  * Everything a franchise needs about itself, on one page: what is left to
@@ -49,6 +50,13 @@ export default async function TeamDashboardPage() {
   ]);
 
   const minSquad = settings.minSquadSize ?? 20;
+  // A team whose ledger has not been backfilled has no entries at all, and the
+  // summary then reports a remaining balance of 0. Fall back to the budget
+  // minus spend, the same way the auction board does, so the purse never reads
+  // as empty just because the ledger is missing.
+  const remaining = summary.hasLedger
+    ? summary.remaining
+    : team.initialBudget - summary.spent;
   const stillNeeded = Math.max(0, minSquad - players.length);
   const budget = team.initialBudget;
   const spentPct = budget ? Math.min(100, (summary.spent / budget) * 100) : 0;
@@ -61,7 +69,7 @@ export default async function TeamDashboardPage() {
           Purse remaining
         </p>
         <p className="text-5xl font-bold tabular-money text-primary">
-          {fmt(summary.remaining)}
+          {fmt(remaining)}
         </p>
         <Progress value={spentPct} />
         <div className="flex justify-between text-xs text-muted-foreground tabular-money">
@@ -87,7 +95,20 @@ export default async function TeamDashboardPage() {
 
       {/* Squad list. */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Your squad</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Your squad</h2>
+          {/* A plain link, not a fetch: the browser handles the download and
+              the route names the file. */}
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<a href="/api/team/export" download />}
+          >
+            <Download className="size-3.5" />
+            Export CSV
+          </Button>
+        </div>
 
         {players.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border py-12 text-center text-muted-foreground">
