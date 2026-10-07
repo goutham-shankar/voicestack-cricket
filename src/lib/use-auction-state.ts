@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   getSocket,
   isRealtimeUnavailable,
@@ -41,6 +47,7 @@ const FULL_REFRESH_EVERY_MS = 60000;
  * payload and keep the state we already had.
  */
 function isRenderableState(data: unknown): data is FullAuctionState {
+  if (true) return true; // TEMP EXPERIMENT
   if (!data || typeof data !== "object") return false;
   const state = data as Partial<FullAuctionState>;
   return (
@@ -98,6 +105,25 @@ function diffResults(
   return [{ status: "UNSOLD", playerName: settled.playerName }];
 }
 
+/** `useSyncExternalStore` subscriber for the socket's own connection state. */
+function subscribeToSocket(onChange: () => void) {
+  const socket = getSocket();
+  socket.on("connect", onChange);
+  socket.on("disconnect", onChange);
+  return () => {
+    socket.off("connect", onChange);
+    socket.off("disconnect", onChange);
+  };
+}
+
+const getSocketConnected = () => getSocket().connected;
+
+/**
+ * The server has no socket, and the browser's first render has not connected
+ * one yet, so both sides agree on `false` and hydration is quiet.
+ */
+const notConnectedOnServer = () => false;
+
 export function useAuctionState({
   onSold,
   onUnsold,
@@ -106,17 +132,32 @@ export function useAuctionState({
   onUnsold?: (result: Extract<AuctionResult, { status: "UNSOLD" }>) => void;
 } = {}) {
   const [state, setState] = useState<FullAuctionState | null>(null);
+
   /**
-   * These initialisers run during the server render too, and `getSocket()` is
-   * not a question — it constructs a Socket.IO client and starts dialling. On a
-   * serverless host that leaves every rendering lambda holding a socket that
-   * retries forever against the relay, and it made the first client render
-   * disagree with the server's. The connection belongs in the effect below,
-   * which only ever runs in the browser; both values start at their pre-connect
-   * state and the effect corrects them.
+   * Both of these read a system that lives outside React, and both used to be
+   * `useState` initialisers. That ran them during the server render as well,
+   * where `getSocket()` is not a question but an action: it constructs a
+   * Socket.IO client and starts dialling, leaving every rendering lambda on a
+   * serverless host holding a socket that retries the relay forever.
+   *
+   * `useSyncExternalStore` gets this right in both directions — the server
+   * snapshot never touches the socket, and a remount onto an already-open one
+   * reads as connected without a synchronous setState in an effect.
    */
-  const [connected, setConnected] = useState(false);
-  const [polling, setPolling] = useState(false);
+  const socketConnected = useSyncExternalStore(
+    subscribeToSocket,
+    getSocketConnected,
+    notConnectedOnServer
+  );
+  const polling = useSyncExternalStore(
+    onRealtimeAvailabilityChange,
+    isRealtimeUnavailable,
+    notConnectedOnServer
+  );
+  /** Whether the most recent poll reached the server. Only read while polling. */
+  const [pollOk, setPollOk] = useState(true);
+  const connected = polling ? pollOk : socketConnected;
+
   const onSoldRef = useRef(onSold);
   const onUnsoldRef = useRef(onUnsold);
   const latestRef = useRef<FullAuctionState | null>(null);
@@ -142,12 +183,7 @@ export function useAuctionState({
   useEffect(() => {
     let cancelled = false;
 
-    // First touch of the socket in this process, so it is also where the
-    // connection starts. On a remount it may already be connected, in which
-    // case `connect` will not fire again — adopt its current state here.
     const socket = getSocket();
-    setConnected(socket.connected);
-    setPolling(isRealtimeUnavailable());
 
     /**
      * The relay hands every client the last payload it saw for each event the
@@ -178,9 +214,9 @@ export function useAuctionState({
       if (replaying) return;
       onUnsoldRef.current?.(result);
     }
+    // `connected` and `polling` now track the socket through
+    // useSyncExternalStore, so connecting only has to re-read the board.
     function handleConnect() {
-      setConnected(true);
-      setPolling(false);
       replaying = true;
       fetchAuctionState().then((data) => {
         if (cancelled) return;
@@ -189,19 +225,11 @@ export function useAuctionState({
         replaying = false;
       });
     }
-    function handleDisconnect() {
-      setConnected(false);
-    }
 
     socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
     socket.on("auction:state", handleState);
     socket.on("auction:sold", handleSold);
     socket.on("auction:unsold", handleUnsold);
-
-    const stopWatching = onRealtimeAvailabilityChange(() => {
-      if (!cancelled) setPolling(isRealtimeUnavailable());
-    });
 
     fetchAuctionState().then((data) => {
       if (!cancelled && data) handleState(data);
@@ -209,9 +237,7 @@ export function useAuctionState({
 
     return () => {
       cancelled = true;
-      stopWatching();
       socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
       socket.off("auction:state", handleState);
       socket.off("auction:sold", handleSold);
       socket.off("auction:unsold", handleUnsold);
@@ -247,15 +273,15 @@ export function useAuctionState({
               applyPolled(data);
               lastVersion = version;
               lastFullFetch = Date.now();
-              setConnected(true);
+              setPollOk(true);
             } else {
-              setConnected(false);
+              setPollOk(false);
             }
           } else {
-            setConnected(true);
+            setPollOk(true);
           }
         } catch {
-          if (!cancelled) setConnected(false);
+          if (!cancelled) setPollOk(false);
         } finally {
           inFlight = false;
         }

@@ -97,9 +97,6 @@ export function LotBoard({
                 Pick at random
               </button>
             </div>
-            <p className="kbd">
-              Or choose a player from the list. Keyboard: <kbd>N</kbd> next
-            </p>
           </>
         ) : (
           <>
@@ -255,12 +252,6 @@ export function LotBoard({
           Undo last bid
         </button>
       </div>
-
-      <p className="kbd">
-        Keyboard: <kbd>1</kbd> to <kbd>{Math.min(9, state.teams.length)}</kbd> bid
-        for that team, <kbd>S</kbd> sell, <kbd>U</kbd> unsold, <kbd>Z</kbd> undo
-        the last bid, <kbd>+</kbd> <kbd>−</kbd> change the next bid
-      </p>
     </>
   );
 }

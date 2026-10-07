@@ -9,7 +9,6 @@ import { boardFontClass } from "@/components/auction/board/fonts";
 import { LotBoard } from "@/components/auction/board/lot-board";
 import { PlayerQueue } from "@/components/auction/board/player-queue";
 import { PurseTable } from "@/components/auction/board/purse-table";
-import { useBoardKeys } from "@/components/auction/board/use-board-keys";
 import "@/components/auction/board/board.css";
 
 async function post(url: string, body?: unknown): Promise<FullAuctionState> {
@@ -89,22 +88,6 @@ export function AuctionBoard() {
   const effectiveNextBid = nextBid ?? minNext ?? 0;
   const isLive = state?.auctionState.status === "LIVE";
 
-  useBoardKeys({
-    enabled: Boolean(state) && isLive && !busy,
-    onBidTeam: (index) => {
-      const team = state?.teams[index];
-      if (!team?.board?.limit?.ok) return;
-      bid(team._id);
-    },
-    onSell: () => void run(() => post("/api/auction/sell")),
-    onUnsold: () => void run(() => post("/api/auction/unsold")),
-    onUndo: () => void run(() => post("/api/auction/bid/undo")),
-    onNudge: (direction) => {
-      if (minNext == null || !state) return;
-      const step = incrementFor(effectiveNextBid, state.settings) * direction;
-      setNextBid(Math.max(minNext, effectiveNextBid + step));
-    },
-  });
 
   const warnings = useMemo(() => {
     if (!state) return [];
