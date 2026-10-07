@@ -1,7 +1,8 @@
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { fmt, incrementFor } from "@/lib/auction-engine";
+import { useState } from "react";
+import { fmt, incrementFor, parseMoney } from "@/lib/auction-engine";
 import type { FullAuctionState } from "@/lib/auction-types";
 import { teamColor } from "@/components/auction/board/board-utils";
 import { ResultStamp } from "@/components/auction/board/result-stamp";
@@ -29,6 +30,12 @@ export function LotBoard({
   onUndo: () => void;
   onBringUp: (playerId: string) => void;
 }) {
+  // What the admin is part-way through typing. While it is null the box shows
+  // the committed amount the way the room says it ("50L"); the raw text is kept
+  // only for the duration of an edit, so a half-typed "1.5" is never reformatted
+  // out from under them mid-keystroke.
+  const [draft, setDraft] = useState<string | null>(null);
+
   const auctionState = state.auctionState;
   const live = auctionState.status === "LIVE" ? auctionState.currentPlayerId : null;
   const teamIndexById = new Map(state.teams.map((team, i) => [team._id, i]));
@@ -182,32 +189,40 @@ export function LotBoard({
               type="button"
               className="btn sq"
               aria-label="Lower the next bid"
-              onClick={() =>
+              onClick={() => {
+                setDraft(null);
                 onNextBidChange(
                   Math.max(minNext, nextBid - incrementFor(nextBid, state.settings))
-                )
-              }
+                );
+              }}
             >
               −
             </button>
             <input
               id="vpl-nextbid"
-              inputMode="decimal"
+              inputMode="text"
               autoComplete="off"
               aria-invalid={invalidNext || undefined}
-              value={nextBid}
-              onChange={(event) => {
-                const parsed = Number(event.target.value);
-                if (Number.isFinite(parsed)) onNextBidChange(parsed);
+              value={draft ?? fmt(nextBid)}
+              onFocus={(event) => {
+                setDraft(fmt(nextBid));
+                event.target.select();
               }}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                const parsed = parseMoney(event.target.value);
+                if (parsed !== null) onNextBidChange(parsed);
+              }}
+              onBlur={() => setDraft(null)}
             />
             <button
               type="button"
               className="btn sq"
               aria-label="Raise the next bid"
-              onClick={() =>
-                onNextBidChange(nextBid + incrementFor(nextBid, state.settings))
-              }
+              onClick={() => {
+                setDraft(null);
+                onNextBidChange(nextBid + incrementFor(nextBid, state.settings));
+              }}
             >
               +
             </button>

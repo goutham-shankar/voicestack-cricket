@@ -192,6 +192,40 @@ export function fmt(n: number | null | undefined): string {
   return `${sign}${trim(abs)}`;
 }
 
+/**
+ * The inverse of `fmt`: reads money the way the room says it.
+ *
+ * Accepts what someone would actually type into a bid box — "50L", "1.5 Cr",
+ * "20k", "₹50L" or a plain "5000000" — so the board can show the spoken form
+ * and still take a typed correction. A bare number is rupees, matching what
+ * `fmt` prints for amounts under a thousand.
+ *
+ * Returns null for anything it cannot read, so callers can leave the committed
+ * amount alone rather than lurching to 0 mid-keystroke.
+ */
+export function parseMoney(input: string): number | null {
+  const text = input.trim().replace(/[₹,\s]/g, "");
+  if (!text) return null;
+
+  const match = /^(-?\d*\.?\d+)(cr|c|l|k)?$/i.exec(text);
+  if (!match) return null;
+
+  const value = Number(match[1]);
+  if (!isFinite(value)) return null;
+
+  switch (match[2]?.toLowerCase()) {
+    case "cr":
+    case "c":
+      return r2(value * CRORE);
+    case "l":
+      return r2(value * LAKH);
+    case "k":
+      return r2(value * 1000);
+    default:
+      return r2(value);
+  }
+}
+
 /** Categories in round order. */
 export function orderedCategories(categories: EngineCategory[]): EngineCategory[] {
   return [...categories].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
