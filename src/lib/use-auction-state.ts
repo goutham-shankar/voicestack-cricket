@@ -9,9 +9,9 @@ import {
 import type { AuctionResult, FullAuctionState } from "@/lib/auction-types";
 
 // How often we re-fetch state when sockets are unavailable (serverless hosts).
-// /api/auction/state also resolves expired lots, so polling keeps the timer
-// honest the same way a socket broadcast would. A backgrounded tab backs off
-// instead of stopping, so it is never more than one interval out of date.
+// /api/auction/state is a pure read, so polling only mirrors what the admin has
+// done. A backgrounded tab backs off instead of stopping, so it is never more
+// than one interval out of date.
 const POLL_INTERVAL_MS = 1500;
 const HIDDEN_POLL_INTERVAL_MS = 10000;
 
@@ -28,17 +28,23 @@ function playerId(state: FullAuctionState): string | null {
 
 /**
  * Derive the sold/unsold results that a socket would have pushed, by comparing
- * two polled snapshots. `recentSales[]._id` is the player id, so a sale that is
- * new to the latest snapshot means that player was just sold; a player that was
- * live and left the block without appearing in the sales feed went unsold.
+ * two polled snapshots. `recentSales[]._id` is the player id, so a sale whose
+ * player has never been announced before means that player was just sold; a
+ * player that was live and left the block without appearing in the sales feed
+ * went unsold.
+ *
+ * `announced` accumulates every sale id this client has already seen, rather
+ * than being re-derived from the previous snapshot. `recentSales` is a trailing
+ * window of the last few sales, so comparing only two snapshots would replay an
+ * older sale as a brand-new SOLD whenever that window shifted or re-ordered.
  */
 function diffResults(
   prev: FullAuctionState,
   next: FullAuctionState,
+  announced: Set<string>,
 ): AuctionResult[] {
-  const seen = new Set(prev.recentSales.map((sale) => sale._id));
   const results: AuctionResult[] = next.recentSales
-    .filter((sale) => !seen.has(sale._id))
+    .filter((sale) => !announced.has(sale._id))
     .reverse()
     .map((sale) => ({
       status: "SOLD" as const,
@@ -62,6 +68,11 @@ function diffResults(
   return results;
 }
 
+/** Marks every sale in a snapshot as already surfaced. */
+function rememberSales(announced: Set<string>, state: FullAuctionState) {
+  for (const sale of state.recentSales) announced.add(sale._id);
+}
+
 export function useAuctionState({
   onSold,
   onUnsold,
@@ -75,6 +86,9 @@ export function useAuctionState({
   const onSoldRef = useRef(onSold);
   const onUnsoldRef = useRef(onUnsold);
   const latestRef = useRef<FullAuctionState | null>(null);
+  // Every sale id this client has already surfaced, so a shifting
+  // `recentSales` window can never re-announce an old sale.
+  const announcedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     onSoldRef.current = onSold;
@@ -87,8 +101,13 @@ export function useAuctionState({
     const prev = latestRef.current;
     latestRef.current = next;
     setState(next);
-    if (!prev) return;
-    for (const result of diffResults(prev, next)) {
+    if (!prev) {
+      rememberSales(announcedRef.current, next);
+      return;
+    }
+    const results = diffResults(prev, next, announcedRef.current);
+    rememberSales(announcedRef.current, next);
+    for (const result of results) {
       if (result.status === "SOLD") onSoldRef.current?.(result);
       else onUnsoldRef.current?.(result);
     }
@@ -102,6 +121,10 @@ export function useAuctionState({
     function handleState(data: FullAuctionState) {
       latestRef.current = data;
       setState(data);
+      // Sales pushed over the socket are announced by `auction:sold`, so mark
+      // them seen here too — otherwise a later fall back to polling would
+      // replay them as fresh results.
+      rememberSales(announcedRef.current, data);
     }
     function handleSold(result: Extract<AuctionResult, { status: "SOLD" }>) {
       onSoldRef.current?.(result);

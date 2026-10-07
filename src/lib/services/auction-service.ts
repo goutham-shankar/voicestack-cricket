@@ -18,18 +18,6 @@ type AuctionSettingsLean = {
   minReservePerSlot?: number;
 };
 
-type ResolveResult =
-  | {
-      status: "SOLD";
-      playerName: string;
-      teamName: string;
-      price: number;
-    }
-  | {
-      status: "UNSOLD";
-      playerName: string;
-    };
-
 async function getSettings(): Promise<{
   timerSeconds: number;
   minReservePerSlot: number;
@@ -261,47 +249,18 @@ async function buildFullState() {
   };
 }
 
-type BuiltAuctionState = Awaited<ReturnType<typeof buildFullState>>;
-
 /**
- * If the live lot's timer has expired without an offline sale being recorded
- * yet, auto-mark it unsold so the room never stalls. Safe to call from reads
- * and writes; returns null when nothing changed.
+ * The pacing timer is advisory only: when it runs out the lot stays on the
+ * block and keeps waiting for the admin to record the result. Nothing in this
+ * service ever closes, sells or unsolds a lot on its own.
  */
-export async function resolveExpiredLot(): Promise<{
-  state: BuiltAuctionState;
-  result: ResolveResult;
-} | null> {
+export async function getFullState() {
   await connectDB();
-  const auctionState = await getAuctionStateDoc();
-
-  if (auctionState.status !== "LIVE" || !auctionState.currentPlayerId) {
-    return null;
-  }
-  if (!auctionState.timerEnabled || auctionState.timerPaused) {
-    return null;
-  }
-  if (!auctionState.timerEndsAt || auctionState.timerEndsAt.getTime() > Date.now()) {
-    return null;
-  }
-
-  return markUnsold();
-}
-
-export async function getFullState(options?: { resolveExpired?: boolean }) {
-  await connectDB();
-
-  if (options?.resolveExpired !== false) {
-    const resolved = await resolveExpiredLot();
-    if (resolved) return resolved.state;
-  }
-
   return buildFullState();
 }
 
 export async function startAuction(playerId: string) {
   await connectDB();
-  await resolveExpiredLot();
   await getAuctionStateDoc();
 
   if (!Types.ObjectId.isValid(playerId)) {
@@ -363,7 +322,7 @@ export async function startAuction(playerId: string) {
 
   await repairOrphanLivePlayers(player._id);
 
-  return getFullState({ resolveExpired: false });
+  return getFullState();
 }
 
 export async function pauseTimer() {
@@ -371,7 +330,7 @@ export async function pauseTimer() {
   const auctionState = await getAuctionStateDoc();
   if (auctionState.status !== "LIVE") throw new ServiceError("No auction is live");
   if (!auctionState.timerEnabled) throw new ServiceError("Timer is disabled");
-  if (auctionState.timerPaused) return getFullState({ resolveExpired: false });
+  if (auctionState.timerPaused) return getFullState();
 
   const remaining = auctionState.timerEndsAt
     ? auctionState.timerEndsAt.getTime() - Date.now()
@@ -381,31 +340,25 @@ export async function pauseTimer() {
   auctionState.timerPaused = true;
   await auctionState.save();
 
-  return getFullState({ resolveExpired: false });
+  return getFullState();
 }
 
 export async function resumeTimer() {
   await connectDB();
   const auctionState = await getAuctionStateDoc();
   if (auctionState.status !== "LIVE") throw new ServiceError("No auction is live");
-  if (!auctionState.timerPaused) return getFullState({ resolveExpired: false });
+  if (!auctionState.timerPaused) return getFullState();
 
-  const remaining = auctionState.timerRemainingMs ?? 0;
-  if (remaining <= 0) {
-    auctionState.timerPaused = false;
-    auctionState.timerRemainingMs = null;
-    auctionState.timerEndsAt = new Date(Date.now());
-    await auctionState.save();
-    const resolved = await resolveExpiredLot();
-    if (resolved) return resolved.state;
-  }
+  // A clock that was paused at zero stays at zero — the lot waits for the
+  // admin rather than resolving itself.
+  const remaining = Math.max(auctionState.timerRemainingMs ?? 0, 0);
 
   auctionState.timerEndsAt = new Date(Date.now() + remaining);
   auctionState.timerRemainingMs = null;
   auctionState.timerPaused = false;
   await auctionState.save();
 
-  return getFullState({ resolveExpired: false });
+  return getFullState();
 }
 
 export async function setTimerEnabled(enabled: boolean) {
@@ -423,7 +376,7 @@ export async function setTimerEnabled(enabled: boolean) {
   }
 
   await auctionState.save();
-  return getFullState({ resolveExpired: false });
+  return getFullState();
 }
 
 /** Restarts the pacing timer for the current lot — there is no bid to reset anymore. */
@@ -442,7 +395,7 @@ export async function resetTimer() {
     : null;
   await auctionState.save();
 
-  return getFullState({ resolveExpired: false });
+  return getFullState();
 }
 
 /**
@@ -520,7 +473,7 @@ export async function sellPlayer(teamId: string, price: number) {
     );
   }
 
-  const state = await getFullState({ resolveExpired: false });
+  const state = await getFullState();
   return {
     state,
     result: {
@@ -555,7 +508,7 @@ export async function markUnsold() {
 
   await clearLiveAuctionState(player._id);
 
-  const state = await getFullState({ resolveExpired: false });
+  const state = await getFullState();
   return {
     state,
     result: { status: "UNSOLD" as const, playerName: player.name },

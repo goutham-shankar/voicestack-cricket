@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AuctionStateDTO } from "@/lib/auction-types";
 
@@ -21,7 +21,6 @@ export function AuctionTimer({
   className?: string;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const resolvingRef = useRef(false);
 
   useEffect(() => {
     if (!auctionState.timerEnabled || auctionState.timerPaused) return;
@@ -34,30 +33,6 @@ export function AuctionTimer({
     : auctionState.timerEndsAt
       ? new Date(auctionState.timerEndsAt).getTime() - now
       : 0;
-
-  useEffect(() => {
-    if (
-      !auctionState.timerEnabled ||
-      auctionState.timerPaused ||
-      !auctionState.timerEndsAt ||
-      remainingMs > 0 ||
-      resolvingRef.current
-    ) {
-      return;
-    }
-
-    resolvingRef.current = true;
-    fetch("/api/auction/resolve", { method: "POST" })
-      .catch(() => {})
-      .finally(() => {
-        resolvingRef.current = false;
-      });
-  }, [
-    auctionState.timerEnabled,
-    auctionState.timerPaused,
-    auctionState.timerEndsAt,
-    remainingMs,
-  ]);
 
   if (!auctionState.timerEnabled) {
     return null;
@@ -84,7 +59,7 @@ export function AuctionTimer({
         {auctionState.timerPaused
           ? "Paused"
           : remainingMs <= 0
-            ? "Closing…"
+            ? "Time Up"
             : "Timer"}
       </p>
       <p

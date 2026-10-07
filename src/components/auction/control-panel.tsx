@@ -75,18 +75,22 @@ export function ControlPanel({
     : 0;
 
   const [sellTeamId, setSellTeamId] = useState<string>("");
-  // Seeded here too: the lot-change reset below cannot fire on first mount.
-  const [sellPrice, setSellPrice] = useState<string>(basePrice ? String(basePrice) : "");
+  // Always starts empty and is only ever typed by the admin — the hammer price
+  // is never pre-filled or re-filled from the base price, so nothing in this
+  // field moves on its own while a lot is live.
+  const [sellPrice, setSellPrice] = useState<string>("");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
-  // Reset the sale form when a new lot goes live. Adjusting state during
-  // render (rather than in an effect) avoids a wasted commit with stale values.
+  // Clear the sale form when a new lot goes live, so the previous lot's winner
+  // and price can never be submitted against the wrong player. Adjusting state
+  // during render (rather than in an effect) avoids a wasted commit with stale
+  // values.
   const livePlayerId = player?._id ?? null;
   const [formLotId, setFormLotId] = useState(livePlayerId);
   if (formLotId !== livePlayerId) {
     setFormLotId(livePlayerId);
     setSellTeamId("");
-    setSellPrice(basePrice ? String(basePrice) : "");
+    setSellPrice("");
   }
 
   async function run(action: string, fn: () => Promise<unknown>) {
@@ -274,6 +278,11 @@ export function ControlPanel({
                 type="number"
                 min={1}
                 value={sellPrice}
+                placeholder={
+                  basePrice
+                    ? `Base ₹${basePrice.toLocaleString("en-IN")}`
+                    : "Enter hammer price"
+                }
                 onChange={(e) => setSellPrice(e.target.value)}
               />
             </div>
