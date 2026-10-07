@@ -15,7 +15,6 @@ import { Loader2, Save } from "lucide-react";
 
 type SettingsDoc = {
   defaultWalletBudget: number;
-  defaultMaxSquadSize: number;
   // Added with the auction board; older documents will not have them.
   minSquadSize?: number;
   bidIncrement?: number;
@@ -45,9 +44,7 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
     resolver: zodResolver(settingsSchema),
     defaultValues: {
       defaultWalletBudget: initialSettings.defaultWalletBudget,
-      defaultMaxSquadSize: initialSettings.defaultMaxSquadSize,
-      minSquadSize:
-        initialSettings.minSquadSize ?? initialSettings.defaultMaxSquadSize,
+      minSquadSize: initialSettings.minSquadSize ?? 20,
       bidIncrement: initialSettings.bidIncrement ?? 500,
       captainsCount: initialSettings.captainsCount ?? true,
     },
@@ -97,20 +94,6 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="defaultMaxSquadSize">Default Max Squad Size</Label>
-            <Input
-              id="defaultMaxSquadSize"
-              type="number"
-              {...register("defaultMaxSquadSize", { valueAsNumber: true })}
-            />
-            {errors.defaultMaxSquadSize && (
-              <p className="text-sm text-destructive">
-                {errors.defaultMaxSquadSize.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor="minSquadSize">Minimum Squad Size</Label>
             <Input
               id="minSquadSize"
@@ -118,8 +101,9 @@ export function DefaultsForm({ initialSettings }: { initialSettings: SettingsDoc
               {...register("minSquadSize", { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Every team must reach this. Category minimums are set per category
-              below; the first category takes up the slack.
+              Every team must reach this, and there is no ceiling above it — a
+              team with purse left can keep signing. Category minimums are set
+              per category below; the first category takes up the slack.
             </p>
             {errors.minSquadSize && (
               <p className="text-sm text-destructive">

@@ -21,7 +21,8 @@ export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-1">
       {teams.map((team) => {
-        const isFull = team.slotsRemaining <= 0;
+        const slots = team.slotsRemaining;
+        const isFull = slots != null && slots <= 0;
         return (
           <div
             key={team._id}
@@ -41,7 +42,11 @@ export function TeamWalletStrip({ teams }: { teams: TeamSummary[] }) {
                   isFull ? "text-unsold-foreground" : "text-muted-foreground"
                 )}
               >
-                {isFull ? "Squad full" : `${team.slotsRemaining} slots left`}
+                {isFull
+                  ? "Squad full"
+                  : slots == null
+                    ? `${team.squadCount} signed`
+                    : `${slots} slots left`}
               </p>
             </div>
           </div>

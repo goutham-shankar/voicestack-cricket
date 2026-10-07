@@ -59,7 +59,7 @@ export async function PATCH(
         { status: 400 }
       );
     }
-    if (nextMaxSquad < squadCount) {
+    if (nextMaxSquad != null && nextMaxSquad < squadCount) {
       return NextResponse.json(
         {
           error: `Max squad size cannot be below current squad (${squadCount})`,

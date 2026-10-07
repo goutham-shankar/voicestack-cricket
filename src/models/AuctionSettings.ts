@@ -22,7 +22,7 @@ export const AuctionSettingsStore = collection<AuctionSettings>({
   defaults: () => ({
     defaultWalletBudget: 100000,
     defaultMaxSquadSize: 12,
-    minSquadSize: 12,
+    minSquadSize: 20,
     bidIncrement: 20 * 100000,
     bidIncrementTiers: [
       { from: 0, increment: 20 * 100000 },

@@ -148,7 +148,8 @@ export function PurseTable({ state }: { state: FullAuctionState }) {
                     {board?.squad ?? team.squadCount}
                   </span>
                   <span className="sub">
-                    of {minSquad}, max {team.maxSquadSize}
+                    of {minSquad}
+                    {team.maxSquadSize != null && `, max ${team.maxSquadSize}`}
                   </span>
                 </td>
 

@@ -77,7 +77,7 @@ export function TeamsTable({ initialTeams }: { initialTeams: TeamRecord[] }) {
                   <TableCell className="tabular-money">
                     {fmt(team.initialBudget)}
                   </TableCell>
-                  <TableCell>{team.maxSquadSize}</TableCell>
+                  <TableCell>{team.maxSquadSize ?? "No limit"}</TableCell>
                   <TableCell>
                     {team.loginEmail ? (
                       <Badge variant="secondary" className="font-normal">

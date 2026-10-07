@@ -26,7 +26,7 @@ export type TeamRecord = {
   name: string;
   logoUrl: string | null;
   initialBudget: number;
-  maxSquadSize: number;
+  maxSquadSize: number | null;
   loginEmail?: string | null;
   captainMale?: string;
   captainFemale?: string;
@@ -49,7 +49,7 @@ export function TeamFormDialog({
     name: team?.name ?? "",
     logoUrl: team?.logoUrl ?? null,
     initialBudget: team?.initialBudget ?? 100000,
-    maxSquadSize: team?.maxSquadSize ?? 12,
+    maxSquadSize: team?.maxSquadSize ?? null,
     captainMale: team?.captainMale ?? "",
     captainFemale: team?.captainFemale ?? "",
     loginEmail: "",
@@ -170,7 +170,13 @@ export function TeamFormDialog({
               <Input
                 id="team-squad"
                 type="number"
-                {...register("maxSquadSize", { valueAsNumber: true })}
+                placeholder="No limit"
+                {...register("maxSquadSize", {
+                  // An empty box means no ceiling. `valueAsNumber` turns "" into
+                  // NaN, which would fail validation rather than clearing it.
+                  setValueAs: (v) =>
+                    v === "" || v === null ? null : Number(v),
+                })}
               />
               {errors.maxSquadSize && (
                 <p className="text-sm text-destructive">

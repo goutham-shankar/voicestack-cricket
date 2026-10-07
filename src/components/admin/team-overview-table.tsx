@@ -45,7 +45,8 @@ export function TeamOverviewTable({ teams }: { teams: TeamSummary[] }) {
               </div>
             </TableCell>
             <TableCell className="tabular-nums">
-              {team.squadCount}/{team.maxSquadSize}
+              {team.squadCount}
+              {team.maxSquadSize != null && `/${team.maxSquadSize}`}
             </TableCell>
             <TableCell className="tabular-money">
               {fmt(team.spent)}

@@ -76,7 +76,7 @@ export type WinningTeam = {
   name: string;
   logoUrl: string | null;
   squadCount: number;
-  maxSquadSize: number;
+  maxSquadSize: number | null;
   remaining: number;
 };
 

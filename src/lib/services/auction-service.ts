@@ -125,7 +125,7 @@ async function readSnapshot(): Promise<AuctionSnapshot> {
   return {
     state,
     settings: {
-      minSquadSize: settingsDoc.minSquadSize ?? 12,
+      minSquadSize: settingsDoc.minSquadSize ?? 20,
       bidIncrement: settingsDoc.bidIncrement ?? 20 * 100_000,
       bidIncrementTiers: settingsDoc.bidIncrementTiers,
       captainsCount: settingsDoc.captainsCount ?? true,
@@ -274,7 +274,8 @@ export async function getAllTeamsSummary(snap?: AuctionSnapshot) {
       spent,
       remaining,
       squadCount,
-      slotsRemaining: team.maxSquadSize - squadCount,
+      slotsRemaining:
+        team.maxSquadSize == null ? null : team.maxSquadSize - squadCount,
       captainMale: team.captainMale ?? "",
       captainFemale: team.captainFemale ?? "",
     };

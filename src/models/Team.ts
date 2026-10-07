@@ -4,7 +4,8 @@ export type Team = {
   name: string;
   logoUrl: string | null;
   initialBudget: number;
-  maxSquadSize: number;
+  /** Hard ceiling on squad size. null means no ceiling — the usual setup. */
+  maxSquadSize: number | null;
   captainMale: string;
   captainFemale: string;
 };
@@ -18,7 +19,7 @@ export const Teams = collection<Team>({
     name: "",
     logoUrl: null,
     initialBudget: 100000,
-    maxSquadSize: 12,
+    maxSquadSize: null,
     captainMale: "",
     captainFemale: "",
   }),

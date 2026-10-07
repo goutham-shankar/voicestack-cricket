@@ -16,7 +16,8 @@ export type TeamRef = {
   name: string;
   logoUrl: string | null;
   initialBudget: number;
-  maxSquadSize: number;
+  /** null means no ceiling on squad size. */
+  maxSquadSize: number | null;
   captainMale: string;
   captainFemale: string;
 };
@@ -68,11 +69,13 @@ export type TeamSummary = {
   name: string;
   logoUrl: string | null;
   initialBudget: number;
-  maxSquadSize: number;
+  /** null means no ceiling on squad size. */
+  maxSquadSize: number | null;
   spent: number;
   remaining: number;
   squadCount: number;
-  slotsRemaining: number;
+  /** null whenever there is no ceiling to count down to. */
+  slotsRemaining: number | null;
   captainMale: string;
   captainFemale: string;
   /** Present whenever categories are configured. */
@@ -121,7 +124,7 @@ export type TeamSquad = {
   logoUrl: string | null;
   spent: number;
   remaining: number;
-  maxSquadSize: number;
+  maxSquadSize: number | null;
   players: SquadPlayer[];
 };
 

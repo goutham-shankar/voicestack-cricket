@@ -135,10 +135,6 @@ export function AuctionRoom({
           <CardContent className="pt-6">
             <PlayerSpotlight player={viewState.auctionState.currentPlayerId} />
             {isLive && (
-              <div className="mt-4 flex justify-center">
-              </div>
-            )}
-            {isLive && (
               <p className="mt-6 text-center text-sm text-muted-foreground">
                 Bidding happens verbally in the room.
                 {canSell ? " Record the result below once it's sold." : ""}
@@ -170,7 +166,9 @@ export function AuctionRoom({
         </Card>
       )}
 
-      {ownTeamView && myTeam && (
+      {/* A franchise login reads its squad on /team/dashboard instead, so the
+          auction view stays on the auction and skips the extra fetch. */}
+      {ownTeamView && myTeam && role !== "team" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Your Squad</CardTitle>

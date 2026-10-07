@@ -130,6 +130,42 @@ export type CollectionDef<T> = {
   uniqueCompound?: (keyof T & string)[][];
 };
 
+/**
+ * Creates a unique index once per process, and never lets that get in the way
+ * of serving a request.
+ *
+ * Two things this has to survive. A database built by an earlier version of
+ * this app already carries the same index under Mongo's default name
+ * (`email_1` rather than `uniq_email`), and Mongo rejects a second index on
+ * the same key with a different name — error 85, IndexOptionsConflict. The
+ * index we wanted is already there, so that is success, not failure.
+ *
+ * Anything else is logged once and swallowed. An index is a setup concern;
+ * a read has no business failing because one could not be created. The old
+ * behaviour rethrew *and* cleared the cached attempt, so every subsequent
+ * request paid another doomed round trip to Mongo and then 500ed — which on a
+ * serverless host reads as the whole app being slow and broken.
+ */
+async function ensureIndex(
+  handle: MongoCollection<Document>,
+  collectionName: string,
+  keys: Record<string, 1>,
+  indexName: string
+): Promise<void> {
+  try {
+    await handle.createIndex(keys, { unique: true, name: indexName });
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    // 85 IndexOptionsConflict / 86 IndexKeySpecsConflict: an equivalent index
+    // exists under another name. Nothing to do.
+    if (code === 85 || code === 86) return;
+    console.warn(
+      `[db] could not create index ${indexName} on ${collectionName}:`,
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
 export function collection<T extends Record<string, unknown>>(def: CollectionDef<T>) {
   const { name, defaults, unique = [], uniqueCompound = [] } = def;
   const hasIndexes = unique.length > 0 || uniqueCompound.length > 0;
@@ -147,23 +183,17 @@ export function collection<T extends Record<string, unknown>>(def: CollectionDef
     if (hasIndexes && !indexesReady) {
       indexesReady = Promise.all([
         ...unique.map((field) =>
-          handle.createIndex({ [field]: 1 }, { unique: true, name: `uniq_${field}` })
+          ensureIndex(handle, name, { [field]: 1 }, `uniq_${field}`)
         ),
         ...uniqueCompound.map((fields) =>
-          handle.createIndex(
+          ensureIndex(
+            handle,
+            name,
             Object.fromEntries(fields.map((field) => [field, 1])),
-            { unique: true, name: `uniq_${fields.join("_")}` }
+            `uniq_${fields.join("_")}`
           )
         ),
-      ])
-        .then(() => undefined)
-        .catch((error) => {
-          // A failed attempt must not be remembered as success, but it also
-          // must not sink the request: the write below will still be rejected
-          // by the index if one already exists.
-          indexesReady = null;
-          throw error;
-        });
+      ]).then(() => undefined);
     }
     if (indexesReady) await indexesReady;
 

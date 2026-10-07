@@ -243,7 +243,7 @@ function Board({
       name: flash.teamName,
       logoUrl: t?.logoUrl ?? null,
       squadCount: t?.squadCount ?? 0,
-      maxSquadSize: t?.maxSquadSize ?? 0,
+      maxSquadSize: t?.maxSquadSize ?? null,
       remaining: t?.remaining ?? 0,
     };
   }, [flash, state.teams]);

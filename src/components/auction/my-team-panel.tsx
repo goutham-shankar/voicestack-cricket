@@ -40,7 +40,8 @@ export function MyTeamPanel({ team }: { team: TeamSummary }) {
         <div className="min-w-0 flex-1">
           <p className="text-lg font-semibold">{team.name}</p>
           <p className="text-sm text-muted-foreground">
-            Squad {team.squadCount}/{team.maxSquadSize}
+            Squad {team.squadCount}
+            {team.maxSquadSize != null && `/${team.maxSquadSize}`}
             {slotReserve > 0 && (
               <>
                 {" "}
