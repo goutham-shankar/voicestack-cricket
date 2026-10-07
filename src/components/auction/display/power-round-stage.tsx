@@ -139,17 +139,14 @@ function PowerCard({
 
       <div className="relative mt-auto w-full">
         {won ? (
-          <div className="text-center">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-sold">
-              {player.wonByTeamName}
-            </p>
-            <p
-              className="font-black tabular-nums leading-none text-white"
-              style={{ fontSize: "clamp(1.3rem, 1.7vw, 2rem)" }}
-            >
-              {compactMoney(player.soldPrice ?? 0)}
-            </p>
-          </div>
+          // The winning team only — what they paid is the auctioneer's business,
+          // not the board's, once the player is claimed.
+          <p
+            className="text-center font-black uppercase leading-tight tracking-[0.18em] text-sold"
+            style={{ fontSize: "clamp(0.8rem, 0.95vw, 1.05rem)" }}
+          >
+            {player.wonByTeamName}
+          </p>
         ) : revealed && offers.length > 0 ? (
           <ul className="space-y-1">
             {offers.map((offer, i) => (

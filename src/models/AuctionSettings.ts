@@ -25,7 +25,7 @@ export const AuctionSettingsStore = collection<AuctionSettings>({
     minSquadSize: 20,
     bidIncrement: 20 * 100000,
     bidIncrementTiers: [
-      { from: 0, increment: 20 * 100000 },
+      { from: 0, increment: 10 * 100000 },
       { from: 100 * 100000, increment: 50 * 100000 },
       { from: 400 * 100000, increment: 100 * 100000 },
     ],
